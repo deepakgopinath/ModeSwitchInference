@@ -7,6 +7,7 @@ import numpy as np
 import math
 import argparse
 import os
+import random
 import pickle
 import collections
 import itertools
@@ -148,6 +149,12 @@ def generate_trials(args):
         start_direction = trial_combinations[i][2]
         start_mode_option = trial_combinations[i][3]
         trial_info_dict['env_params']['start_mode'] = START_MODE_DICT[start_direction][start_mode_option]
+        if trial_info_dict['env_params']['start_mode'] == 't':
+            location_of_turn = 0
+        else:
+            location_of_turn = random.choice(range(1, trial_info_dict['env_params']['num_turns'] + 2))
+
+        trial_info_dict['env_params']['location_of_turn'] = location_of_turn
 
         with open(os.path.join(trial_dir, str(i) + '.pkl'), 'wb') as fp:
             pickle.dump(trial_info_dict, fp)

@@ -42,7 +42,7 @@ I-1
 I0
 tp19
 bI00
-S'tf\xde\x0e=\xf36@9\x81\xff\xab\xc1\xeb\x0c@'
+S'\xa9\xf0\xf4\xab\xb7\xfd4@\xf5M;{u\x8f\xfa?'
 p20
 tp21
 baa(lp22
@@ -60,7 +60,7 @@ Rp26
 tp27
 g17
 I00
-S'Z\xe5\x97H\xd8\xc1 @s\xb3I\xeb+\xbc2@'
+S'\x1f\x07\x86\x8b\xa6\xa3!@\xb9\x045-fX2@'
 p28
 tp29
 baa(lp30
@@ -78,7 +78,7 @@ Rp34
 tp35
 g17
 I00
-S'\xf9\r\xf3/z@\xf1?'
+S'\xafZ\x13\tS\x97\x0f@'
 p36
 tp37
 baa(lp38
@@ -96,7 +96,7 @@ Rp42
 tp43
 g17
 I00
-S'\x88\x9d\x1b\xc2:1\x05@'
+S'\x9e\xb8\x9aY(\x14\x16@'
 p44
 tp45
 baa(lp46
@@ -122,8 +122,12 @@ aa(lp56
 S'start_mode'
 p57
 ag49
-aatp58
-Rp59
+aa(lp58
+S'location_of_turn'
+p59
+aI1
 aatp60
 Rp61
+aatp62
+Rp63
 .
