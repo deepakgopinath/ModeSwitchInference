@@ -20,6 +20,7 @@ ROBOT_RADIUS_S = ROBOT_RADIUS/SCALE
 QUADRANT_BOUNDS = collections.OrderedDict()
 WAYPOINTS = np.zeros((NUM_LOCATIONS, 2))
 LOCATION_OF_TURN = random.choice(range(1, NUM_LOCATIONS-1))
+LOCATION_OF_TURN = 2
 R_TO_G_CONFIGS = {'tr':{'r':'3', 'g': '1'},
                   'tl':{'r':'4', 'g': '2'},
                   'br':{'r':'2', 'g': '4'},
@@ -43,8 +44,10 @@ TRANSITION_FOR_ACTION =   {'tr': {'sp': {'x': 'next', 'y': 'next', 't': 'next'},
 					   'bl': {'sp': {'x': 'prev', 'y': 'prev', 't': 'next'}, 'ss': {'x': 'next', 'y': 'next', 't': 'prev'}}			
 						}
 
-ACTION_TO_COMMAND = collections.OrderedDict({'move_p': 'sp', 'move_n':'ss', 'mode_r':'hp', 'mode_l': 'hs'})
-COMMAND_TO_ACTION = collections.OrderedDict({v:k for k, v in ACTION_TO_COMMAND.items()})
+TRUE_ACTION_TO_COMMAND = collections.OrderedDict({'move_p': 'sp', 'move_n':'ss', 'mode_r':'hp', 'mode_l': 'hs'})
+TRUE_COMMAND_TO_ACTION = collections.OrderedDict({v:k for k, v in TRUE_ACTION_TO_COMMAND.items()})
+OPTIMAL_NEXT_STATE_DICT = collections.OrderedDict()
+OPTIMAL_ACTION_DICT = collections.OrderedDict()
 
 def create_state_transition_model():
 	for s in STATES:
@@ -55,30 +58,28 @@ def create_state_transition_model():
 def init_state_transition_model(rgc):
 	for s in STATE_TRANSITION_MODEL.keys():
 		for a in STATE_TRANSITION_MODEL[s].keys():
-			# print(a)
 			if a == 'hp' or a == 'hs':
 				STATE_TRANSITION_MODEL[s][a] = (s[0], s[1], MODE_SWITCH_TRANSITION[s[2]][a]) #generate new state
 			if a == 'sp' or a == 'ss':
 				allowed_modes_for_motion = MODES_MOTION_ALLOWED[s[0]]
-				# print(allowed_modes_for_motion)
+				STATE_TRANSITION_MODEL[s][a] = (s[0], s[1], s[2])
 				for m in allowed_modes_for_motion:
 					if m == s[2]: #make sure that the allowed mode matches the mode in the state s. If it doens't no motion will happen
 						if m != 't':
 							if TRANSITION_FOR_ACTION[rgc][a][m] == 'next':
-								new_loc = LOCATIONS[min(LOCATIONS.index(s[0]) + 1, len(LOCATIONS)-1 )]
+								new_loc_next = LOCATIONS[min(LOCATIONS.index(s[0]) + 1, len(LOCATIONS)-1 )]
+								STATE_TRANSITION_MODEL[s][a] = (new_loc_next, s[1], s[2])
 							elif TRANSITION_FOR_ACTION[rgc][a][m] == 'prev':
-								new_loc = LOCATIONS[max(LOCATIONS.index(s[0]) - 1, 0 )]
-							STATE_TRANSITION_MODEL[s][a] = (new_loc, s[1], s[2])
+								new_loc_prev = LOCATIONS[max(LOCATIONS.index(s[0]) - 1, 0 )]
+								STATE_TRANSITION_MODEL[s][a] = (new_loc_prev, s[1], s[2])
 						elif m == 't':
-							if TRANSITION_FOR_ACTION[rgc][a][m] == 'next':
+							new_theta = s[1]
+							if TRANSITION_FOR_ACTION[rgc][a][m] == 'next' and s[1] == 0:
 								new_theta = min(PI/2, s[1] + PI/2)
-							elif TRANSITION_FOR_ACTION[rgc][a][m] == 'prev':
+							elif TRANSITION_FOR_ACTION[rgc][a][m] == 'prev' and s[1] == PI/2:
 								new_theta = max(0, s[1] - PI/2)
 
-							STATE_TRANSITION_MODEL[s][a] = (s[0], new_theta, s[2])
-							
-					else:
-						STATE_TRANSITION_MODEL[s][a] = (s[0], s[1], s[2])
+							STATE_TRANSITION_MODEL[s][a] = (s[0], new_theta, s[2])	
 			
 def create_bounds_dict():
 	q_keys = [1,2,3,4]
@@ -156,8 +157,8 @@ def generate_start_and_end_points(rgc):
 	gy = QUADRANT_BOUNDS[gq]['y']['min'] + np.random.random()*(QUADRANT_BOUNDS[gq]['y']['max']-QUADRANT_BOUNDS[gq]['y']['min'])
 	robot_position = (rx, ry)
 	goal_position = (gx, gy)
-	robot_init_orientation = np.random.random()*(2*PI)
-	goal_orientation = robot_init_orientation + PI/2
+	robot_init_orientation = 0
+	goal_orientation = PI/2
 	return robot_position, goal_position, robot_init_orientation, goal_orientation
 
 def init_modes_in_which_motion_allowed_dict():
@@ -170,6 +171,46 @@ def init_modes_in_which_motion_allowed_dict():
 			MODES_MOTION_ALLOWED[s].append('t')
 			
 	MODES_MOTION_ALLOWED[LOCATIONS[-1]] = []
+
+def create_optimal_next_state_dict():
+	for s in STATES:
+		if LOCATIONS.index(s[0]) < LOCATION_OF_TURN or LOCATIONS.index(s[0]) > LOCATION_OF_TURN:
+			if s[2] not in MODES_MOTION_ALLOWED[s[0]]: #if not in the proper mode, switch to the mode
+				if len(MODES_MOTION_ALLOWED[s[0]]) == 1:
+					OPTIMAL_NEXT_STATE_DICT[s] = (s[0],s[1],MODES_MOTION_ALLOWED[s[0]][0])
+			else: #if already in proper mode, them move!
+				OPTIMAL_NEXT_STATE_DICT[s] = (LOCATIONS[min(LOCATIONS.index(s[0]) + 1, NUM_LOCATIONS)], s[1], s[2])
+		elif LOCATIONS.index(s[0]) == LOCATION_OF_TURN:
+			if s[2] != 't':
+				if s[1] == 0: #haven't turned, is not in 't'
+					OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1], 't')
+				else: #have turned is not in 't'
+					if s[2] == MODES_MOTION_ALLOWED[s[0]][0]:
+						OPTIMAL_NEXT_STATE_DICT[s] = (LOCATIONS[min(LOCATIONS.index(s[0]) + 1, NUM_LOCATIONS)], s[1], s[2])
+					else:
+						OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1], MODES_MOTION_ALLOWED[s[0]][0]) 
+			else:
+				#already in turning mode
+				if s[1] != PI/2: #check if turned. 
+					OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1] + PI/2, s[2])
+				else:
+					if s[2] == MODES_MOTION_ALLOWED[s[0]][0]:
+						OPTIMAL_NEXT_STATE_DICT[s] = (LOCATIONS[min(LOCATIONS.index(s[0]) + 1, NUM_LOCATIONS)], s[1], s[2])
+					else:
+						OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1], MODES_MOTION_ALLOWED[s[0]][0])
+					
+def generate_optimal_control_dict():
+	for s in OPTIMAL_NEXT_STATE_DICT:
+		sp = OPTIMAL_NEXT_STATE_DICT[s]
+		OPTIMAL_ACTION_DICT[s] = [k for k,v in STATE_TRANSITION_MODEL[s].items() if v == sp]
+		OPTIMAL_ACTION_DICT[s] = TRUE_COMMAND_TO_ACTION[OPTIMAL_ACTION_DICT[s][0]]
+
+def init_p_ui_given_a():
+	pass
+
+def init_p_um_given_ui():
+	pass
+
 
 def main():
 	r_to_g_config = 'tr'
@@ -186,7 +227,11 @@ def main():
 	init_modes_in_which_motion_allowed_dict()
 	create_state_transition_model()
 	init_state_transition_model(r_to_g_config)
-	embed()
+	create_optimal_next_state_dict()
+	generate_optimal_control_dict()
+	
+	init_p_ui_given_a()
+	init_p_um_given_ui()
 	
 
 if __name__ == '__main__':
