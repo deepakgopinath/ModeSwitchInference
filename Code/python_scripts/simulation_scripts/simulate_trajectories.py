@@ -51,42 +51,42 @@ TRUE_COMMAND_TO_ACTION = collections.OrderedDict({v:k for k, v in TRUE_ACTION_TO
 OPTIMAL_NEXT_STATE_DICT = collections.OrderedDict()
 OPTIMAL_ACTION_DICT = collections.OrderedDict()
 P_UI_GIVEN_A = collections.OrderedDict()
-UI_GIVEN_A_NOISE = 0.01
+UI_GIVEN_A_NOISE = 0.5
 P_UM_GIVEN_UI = collections.OrderedDict()
-UM_GIVEN_UI_NOISE = 0.01
+UM_GIVEN_UI_NOISE = 0.1
 
 
 def create_state_transition_model():
 	for s in STATES:
 		STATE_TRANSITION_MODEL[s] = collections.OrderedDict()
-		for a in LOW_LEVEL_COMMANDS:
-			STATE_TRANSITION_MODEL[s][a] = None
+		for u in LOW_LEVEL_COMMANDS:
+			STATE_TRANSITION_MODEL[s][u] = None
 
 def init_state_transition_model(rgc):
 	for s in STATE_TRANSITION_MODEL.keys():
-		for a in STATE_TRANSITION_MODEL[s].keys():
-			if a == 'hp' or a == 'hs':
-				STATE_TRANSITION_MODEL[s][a] = (s[0], s[1], MODE_SWITCH_TRANSITION[s[2]][a]) #generate new state
-			if a == 'sp' or a == 'ss':
+		for u in STATE_TRANSITION_MODEL[s].keys():
+			if u == 'hp' or u == 'hs':
+				STATE_TRANSITION_MODEL[s][u] = (s[0], s[1], MODE_SWITCH_TRANSITION[s[2]][u]) #generate new state
+			if u == 'sp' or u == 'ss':
 				allowed_modes_for_motion = MODES_MOTION_ALLOWED[s[0]]
-				STATE_TRANSITION_MODEL[s][a] = (s[0], s[1], s[2])
+				STATE_TRANSITION_MODEL[s][u] = (s[0], s[1], s[2])
 				for m in allowed_modes_for_motion:
 					if m == s[2]: #make sure that the allowed mode matches the mode in the state s. If it doens't no motion will happen
 						if m != 't':
-							if TRANSITION_FOR_ACTION[rgc][a][m] == 'next':
+							if TRANSITION_FOR_ACTION[rgc][u][m] == 'next':
 								new_loc_next = LOCATIONS[min(LOCATIONS.index(s[0]) + 1, len(LOCATIONS)-1 )]
-								STATE_TRANSITION_MODEL[s][a] = (new_loc_next, s[1], s[2])
-							elif TRANSITION_FOR_ACTION[rgc][a][m] == 'prev':
+								STATE_TRANSITION_MODEL[s][u] = (new_loc_next, s[1], s[2])
+							elif TRANSITION_FOR_ACTION[rgc][u][m] == 'prev':
 								new_loc_prev = LOCATIONS[max(LOCATIONS.index(s[0]) - 1, 0 )]
-								STATE_TRANSITION_MODEL[s][a] = (new_loc_prev, s[1], s[2])
+								STATE_TRANSITION_MODEL[s][u] = (new_loc_prev, s[1], s[2])
 						elif m == 't':
 							new_theta = s[1]
-							if TRANSITION_FOR_ACTION[rgc][a][m] == 'next' and s[1] == 0:
+							if TRANSITION_FOR_ACTION[rgc][u][m] == 'next' and s[1] == 0:
 								new_theta = min(PI/2, s[1] + PI/2)
-							elif TRANSITION_FOR_ACTION[rgc][a][m] == 'prev' and s[1] == PI/2:
+							elif TRANSITION_FOR_ACTION[rgc][u][m] == 'prev' and s[1] == PI/2:
 								new_theta = max(0, s[1] - PI/2)
 
-							STATE_TRANSITION_MODEL[s][a] = (s[0], new_theta, s[2])	
+							STATE_TRANSITION_MODEL[s][u] = (s[0], new_theta, s[2])	
 			
 def create_bounds_dict():
 	q_keys = [1,2,3,4]
@@ -187,7 +187,7 @@ def create_optimal_next_state_dict():
 					OPTIMAL_NEXT_STATE_DICT[s] = (s[0],s[1],MODES_MOTION_ALLOWED[s[0]][0])
 			else: #if already in proper mode, them move!
 				OPTIMAL_NEXT_STATE_DICT[s] = (LOCATIONS[min(LOCATIONS.index(s[0]) + 1, NUM_LOCATIONS)], s[1], s[2])
-		elif LOCATIONS.index(s[0]) == LOCATION_OF_TURN:
+		elif LOCATIONS.index(s[0]) == LOCATION_OF_TURN: #at the location of turning, gotta deal with both turning and then moving in the allowed linear mode
 			if s[2] != 't':
 				if s[1] == 0: #haven't turned, is not in 't'
 					OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1], 't')
@@ -237,6 +237,30 @@ def init_p_um_given_ui():
 		P_UM_GIVEN_UI[i] = collections.OrderedDict({u:(v/normalization_constant) for u, v in P_UM_GIVEN_UI[i].items()})
 
 
+#SIMULATED HUMAN
+def sample_a_given_s(s): #this is essentially a look up from optimal_action_dict
+	assert s in OPTIMAL_ACTION_DICT, "Error in key. Current state not in optimal action dict"
+	a = OPTIMAL_ACTION_DICT[s]
+	return a
+
+def sample_ui_given_a(a): #sample from 
+	p_vector = P_UI_GIVEN_A[a].values() #list
+	ui_index_vector = np.random.multinomial(1, p_vector)
+	ui_index = np.nonzero(ui_index_vector)[0][0]
+	ui = P_UI_GIVEN_A[a].keys()[ui_index]
+	return ui
+
+def sample_um_given_ui(ui):
+	p_vector = P_UM_GIVEN_UI[ui].values() #list
+	um_index_vector = np.random.multinomial(1, p_vector)
+	um_index = np.nonzero(um_index_vector)[0][0]
+	um = P_UM_GIVEN_UI[ui].keys()[um_index]
+	return um
+
+def sample_sp_given_s_um(s, um):
+	sp = STATE_TRANSITION_MODEL[s][um]
+	return sp
+
 def main():
 	r_to_g_config = 'tr'
 	start_direction = StartDirection.X
@@ -258,7 +282,16 @@ def main():
 	init_p_ui_given_a()
 	init_p_um_given_ui()
 
-
+	current_state = (LOCATIONS[0], 0, start_mode)
+	while current_state[0] != LOCATIONS[-1]:
+		a = sample_a_given_s(current_state)
+		ui = sample_ui_given_a(a)
+		um = sample_um_given_ui(ui)
+		#insert correction system here!
+		next_state = sample_sp_given_s_um(current_state, um)
+		print current_state, a, ui, um, next_state
+		current_state = next_state
+		
 	embed()
 	
 
