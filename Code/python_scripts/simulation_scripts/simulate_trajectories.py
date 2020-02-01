@@ -20,7 +20,6 @@ ROBOT_RADIUS_S = ROBOT_RADIUS/SCALE
 QUADRANT_BOUNDS = collections.OrderedDict()
 WAYPOINTS = np.zeros((NUM_LOCATIONS, 2))
 LOCATION_OF_TURN = random.choice(range(1, NUM_LOCATIONS-1))
-LOCATION_OF_TURN = 2
 R_TO_G_CONFIGS = {'tr':{'r':'3', 'g': '1'},
                   'tl':{'r':'4', 'g': '2'},
                   'br':{'r':'2', 'g': '4'},
@@ -31,13 +30,16 @@ MODES = ['x', 'y', 't']
 LOCATIONS = ['p' + str(i) for i in range(NUM_LOCATIONS)]
 ORIENTATIONS = [0, PI/2]
 STATES = [s for s in itertools.product(LOCATIONS, ORIENTATIONS, MODES)]
-ACTIONS = ['hp', 'hs', 'sp', 'ss']
+LOW_LEVEL_COMMANDS = ['hp', 'hs', 'sp', 'ss']
+HIGH_LEVEL_ACTIONS = ['move_p', 'move_n', 'mode_r', 'mode_l']
 STATE_TRANSITION_MODEL = collections.OrderedDict()
 MODE_SWITCH_TRANSITION = {'x': {'hp': 'y', 'hs': 't', 'sp': 'x', 'ss': 'x'},
 						  'y': {'hp': 't', 'hs': 'x', 'sp': 'y', 'ss': 'y'},
 						  't': {'hp': 'x', 'hs': 'y', 'sp': 't', 'ss': 't'}}
 MODES_MOTION_ALLOWED = collections.OrderedDict()
 
+#Depending on the configuration of the initial robot position and goal position, the motion commands will result in either moving towards the
+#next location or the previous location
 TRANSITION_FOR_ACTION =   {'tr': {'sp': {'x': 'next', 'y': 'next', 't': 'next'}, 'ss': {'x': 'prev', 'y': 'prev', 't': 'prev'}},
 					   'tl': {'sp': {'x': 'prev', 'y': 'next', 't': 'next'}, 'ss': {'x': 'next', 'y': 'prev', 't': 'prev'}},
 					   'br': {'sp': {'x': 'next', 'y': 'prev', 't': 'next'}, 'ss': {'x': 'prev', 'y': 'next', 't': 'prev'}},
@@ -48,11 +50,16 @@ TRUE_ACTION_TO_COMMAND = collections.OrderedDict({'move_p': 'sp', 'move_n':'ss',
 TRUE_COMMAND_TO_ACTION = collections.OrderedDict({v:k for k, v in TRUE_ACTION_TO_COMMAND.items()})
 OPTIMAL_NEXT_STATE_DICT = collections.OrderedDict()
 OPTIMAL_ACTION_DICT = collections.OrderedDict()
+P_UI_GIVEN_A = collections.OrderedDict()
+UI_GIVEN_A_NOISE = 0.01
+P_UM_GIVEN_UI = collections.OrderedDict()
+UM_GIVEN_UI_NOISE = 0.01
+
 
 def create_state_transition_model():
 	for s in STATES:
 		STATE_TRANSITION_MODEL[s] = collections.OrderedDict()
-		for a in ACTIONS:
+		for a in LOW_LEVEL_COMMANDS:
 			STATE_TRANSITION_MODEL[s][a] = None
 
 def init_state_transition_model(rgc):
@@ -206,10 +213,28 @@ def generate_optimal_control_dict():
 		OPTIMAL_ACTION_DICT[s] = TRUE_COMMAND_TO_ACTION[OPTIMAL_ACTION_DICT[s][0]]
 
 def init_p_ui_given_a():
-	pass
+	for k in TRUE_ACTION_TO_COMMAND.keys():
+		P_UI_GIVEN_A[k] = collections.OrderedDict()
+		for u in LOW_LEVEL_COMMANDS:
+			if u == TRUE_ACTION_TO_COMMAND[k]:
+				P_UI_GIVEN_A[k][u] = 1.0
+			else:
+				P_UI_GIVEN_A[k][u] = np.random.random()*UI_GIVEN_A_NOISE
 
+		normalization_constant = sum(P_UI_GIVEN_A[k].values())
+		P_UI_GIVEN_A[k] = collections.OrderedDict({u:(v/normalization_constant) for u, v in P_UI_GIVEN_A[k].items()})
+	
 def init_p_um_given_ui():
-	pass
+	for i in LOW_LEVEL_COMMANDS:
+		P_UM_GIVEN_UI[i] = collections.OrderedDict()
+		for j in LOW_LEVEL_COMMANDS:
+			if i == j:
+				P_UM_GIVEN_UI[i][j] = 1.0
+			else:
+				P_UM_GIVEN_UI[i][j] = np.random.random()*UM_GIVEN_UI_NOISE
+
+		normalization_constant = sum(P_UM_GIVEN_UI[i].values())
+		P_UM_GIVEN_UI[i] = collections.OrderedDict({u:(v/normalization_constant) for u, v in P_UM_GIVEN_UI[i].items()})
 
 
 def main():
@@ -232,6 +257,9 @@ def main():
 	
 	init_p_ui_given_a()
 	init_p_um_given_ui()
+
+
+	embed()
 	
 
 if __name__ == '__main__':
