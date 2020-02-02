@@ -27,7 +27,11 @@ WP_RADIUS = 4
 INFLATION_FACTOR = 1.2
 
 PATH_HALF_WIDTH = INFLATION_FACTOR * ROBOT_RADIUS
+class AssistanceType(Enum):
+    Filter = 0
+    Corrective = 1
 
+    
 class StartDirection(Enum):
     X = 0
     Y = 1

@@ -6,11 +6,12 @@ import collections
 import numpy as np
 import sys
 sys.path.append('../utils')
-from utils import VIEWPORT_H, VIEWPORT_W, SCALE, ROBOT_RADIUS, StartDirection, PI
+from utils import VIEWPORT_H, VIEWPORT_W, SCALE, ROBOT_RADIUS, StartDirection, PI, AssistanceType
 import itertools
 import random
 from IPython import embed
 
+np.random.seed(0)
 NUM_TURNS = 3
 NUM_LOCATIONS = NUM_TURNS + 2
 VIEWPORT_WS = VIEWPORT_W/SCALE
@@ -51,10 +52,15 @@ TRUE_COMMAND_TO_ACTION = collections.OrderedDict({v:k for k, v in TRUE_ACTION_TO
 OPTIMAL_NEXT_STATE_DICT = collections.OrderedDict()
 OPTIMAL_ACTION_DICT = collections.OrderedDict()
 P_UI_GIVEN_A = collections.OrderedDict()
-UI_GIVEN_A_NOISE = 0.5
-P_UM_GIVEN_UI = collections.OrderedDict()
-UM_GIVEN_UI_NOISE = 0.1
 
+#need to play with these params and try out what happens with and without assistance. 
+UI_GIVEN_A_NOISE = 0.1 #Lower the number, lower the error. Between 0 and 1
+P_UM_GIVEN_UI = collections.OrderedDict()
+UM_GIVEN_UI_NOISE = 0.9 #Lower the number, lower the error. Between 0 and 1
+P_UI_GIVEN_UM = collections.OrderedDict()
+ENTROPY_THRESHOLD = 0.5
+ASSISTANCE_TYPE = AssistanceType.Corrective
+IS_ASSISTANCE = False
 
 def create_state_transition_model():
 	for s in STATES:
@@ -225,9 +231,9 @@ def init_p_ui_given_a():
 		P_UI_GIVEN_A[k] = collections.OrderedDict({u:(v/normalization_constant) for u, v in P_UI_GIVEN_A[k].items()})
 	
 def init_p_um_given_ui():
-	for i in LOW_LEVEL_COMMANDS:
+	for i in LOW_LEVEL_COMMANDS: #ui
 		P_UM_GIVEN_UI[i] = collections.OrderedDict()
-		for j in LOW_LEVEL_COMMANDS:
+		for j in LOW_LEVEL_COMMANDS: #um
 			if i == j:
 				P_UM_GIVEN_UI[i][j] = 1.0
 			else:
@@ -257,9 +263,48 @@ def sample_um_given_ui(ui):
 	um = P_UM_GIVEN_UI[ui].keys()[um_index]
 	return um
 
-def sample_sp_given_s_um(s, um):
-	sp = STATE_TRANSITION_MODEL[s][um]
-	return sp
+def sample_sp_given_s_um(s, u):
+	if u is not None:
+		sp = STATE_TRANSITION_MODEL[s][u]
+		return sp
+	else:
+		return s
+
+def compute_p_ui_given_um(a, um):
+	global P_UI_GIVEN_UM #need to use global because we are modifying a global dict
+	for ui in LOW_LEVEL_COMMANDS:
+		P_UI_GIVEN_UM[ui] = P_UM_GIVEN_UI[ui][um] * P_UI_GIVEN_A[a][ui]
+	normalization_constant = sum(P_UI_GIVEN_UM.values())
+	for u in P_UI_GIVEN_UM.keys():
+		P_UI_GIVEN_UM[u] = P_UI_GIVEN_UM[u]/normalization_constant
+
+
+def infer_intended_commands(a, um):
+	compute_p_ui_given_um(a, um)
+	p_ui_given_um_vector = np.array(P_UI_GIVEN_UM.values())
+	p_ui_given_um_vector = p_ui_given_um_vector + np.finfo(p_ui_given_um_vector.dtype).tiny
+	u_intended = P_UI_GIVEN_UM.keys()[np.argmax(p_ui_given_um_vector)]
+	uniform_distribution = np.array([1.0/p_ui_given_um_vector.size]*p_ui_given_um_vector.size)
+	max_entropy = -np.dot(uniform_distribution, np.log2(uniform_distribution))
+	normalized_h_of_p_ui_given_um = -np.dot(p_ui_given_um_vector, np.log2(p_ui_given_um_vector))/max_entropy 
+	print "UINTENDED, UM", u_intended, um
+	if u_intended != um:
+		#check entropy to decide whether to intervene or not
+		if normalized_h_of_p_ui_given_um < ENTROPY_THRESHOLD: #intervene
+			print 'INTERVENED, LOW ENTROPY'
+			if ASSISTANCE_TYPE == AssistanceType.Filter:
+				u_corrected = None
+			elif ASSISTANCE_TYPE == AssistanceType.Corrective:
+				u_corrected = u_intended
+		else:
+			print 'NOT INTERVENED, HIGH ENTROPY'
+			u_corrected = um #Maybe keep this as None? because u intended is not same as um? 
+			
+	else:
+		print 'u_intended same as um, no need to do anything'
+		u_corrected = um
+	
+	return u_corrected
 
 def main():
 	r_to_g_config = 'tr'
@@ -281,18 +326,24 @@ def main():
 	
 	init_p_ui_given_a()
 	init_p_um_given_ui()
-
 	current_state = (LOCATIONS[0], 0, start_mode)
+	num_steps = 0
 	while current_state[0] != LOCATIONS[-1]:
 		a = sample_a_given_s(current_state)
 		ui = sample_ui_given_a(a)
 		um = sample_um_given_ui(ui)
+		print "S, A, UI, UM", current_state, a, ui, um
 		#insert correction system here!
-		next_state = sample_sp_given_s_um(current_state, um)
-		print current_state, a, ui, um, next_state
-		current_state = next_state
+		if IS_ASSISTANCE:
+			um = infer_intended_commands(a, um)
 		
-	embed()
+		next_state = sample_sp_given_s_um(current_state, um)
+		num_steps += 1
+		print "U_APPLIED, SP ", um, next_state
+		print "     "
+		current_state = next_state
+	
+	print "TOTAL NUM STEPS ", num_steps
 	
 
 if __name__ == '__main__':
