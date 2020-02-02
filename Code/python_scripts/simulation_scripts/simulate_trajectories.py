@@ -11,32 +11,51 @@ import itertools
 import random
 from IPython import embed
 
-np.random.seed(0)
-NUM_TURNS = 3
-NUM_LOCATIONS = NUM_TURNS + 2
+np.random.seed(0) #seed for reproducibility
+
+NUM_TURNS = 3 #number of turns in the path
+NUM_LOCATIONS = NUM_TURNS + 2 #total number of 'pitstops' = turns+start+end point
+
+#params for generating robot positions. Not used
 VIEWPORT_WS = VIEWPORT_W/SCALE
 VIEWPORT_HS = VIEWPORT_H/SCALE
 ROBOT_RADIUS_S = ROBOT_RADIUS/SCALE
-
 QUADRANT_BOUNDS = collections.OrderedDict()
+
+#array to hold the WAYPOINTS. continuous valued positions
 WAYPOINTS = np.zeros((NUM_LOCATIONS, 2))
+
+#The corner at which the robot needs to be turned
 LOCATION_OF_TURN = random.choice(range(1, NUM_LOCATIONS-1))
+
+#depending on the relative configuration of the goal with respect to the robot, robot and g will be in different quadrants
 R_TO_G_CONFIGS = {'tr':{'r':'3', 'g': '1'},
                   'tl':{'r':'4', 'g': '2'},
                   'br':{'r':'2', 'g': '4'},
                   'bl':{'r':'1', 'g': '3'}}
 
-
+#1D modes for SNP
 MODES = ['x', 'y', 't']
+#symbols for different locations. 
 LOCATIONS = ['p' + str(i) for i in range(NUM_LOCATIONS)]
+#two distinct orientations. Initially robot is at 0, after turning the robot will be at PI/2
 ORIENTATIONS = [0, PI/2]
+#Generate list of states. State = (location, orientation, mode)
 STATES = [s for s in itertools.product(LOCATIONS, ORIENTATIONS, MODES)]
+#low level commands issued by the snp interface. hp = hard puff, hs= hard sip, sp = soft puff, ss = soft sip. Also the domain for ui and um
 LOW_LEVEL_COMMANDS = ['hp', 'hs', 'sp', 'ss']
+#high level actions, move_p = move in positive direction, move_n = move in negative direction, mode_r = switch mode to right, mode_l = switch mode to left. positive and negative is conditioned on mode
 HIGH_LEVEL_ACTIONS = ['move_p', 'move_n', 'mode_r', 'mode_l']
+
+#empty dictionary to hold the state transition mode
 STATE_TRANSITION_MODEL = collections.OrderedDict()
+
+#transition function for mode switches. 
 MODE_SWITCH_TRANSITION = {'x': {'hp': 'y', 'hs': 't', 'sp': 'x', 'ss': 'x'},
 						  'y': {'hp': 't', 'hs': 'x', 'sp': 'y', 'ss': 'y'},
 						  't': {'hp': 'x', 'hs': 'y', 'sp': 't', 'ss': 't'}}
+
+#empty dictionary to store information regarding modes that allow motion. Essentially this is a way to do bound checks in a path
 MODES_MOTION_ALLOWED = collections.OrderedDict()
 
 #Depending on the configuration of the initial robot position and goal position, the motion commands will result in either moving towards the
@@ -47,19 +66,32 @@ TRANSITION_FOR_ACTION =   {'tr': {'sp': {'x': 'next', 'y': 'next', 't': 'next'},
 					   'bl': {'sp': {'x': 'prev', 'y': 'prev', 't': 'next'}, 'ss': {'x': 'next', 'y': 'next', 't': 'prev'}}			
 						}
 
+#true mapping of a to u
 TRUE_ACTION_TO_COMMAND = collections.OrderedDict({'move_p': 'sp', 'move_n':'ss', 'mode_r':'hp', 'mode_l': 'hs'})
+#true inverse mapping of u to a
 TRUE_COMMAND_TO_ACTION = collections.OrderedDict({v:k for k, v in TRUE_ACTION_TO_COMMAND.items()})
+#dictionary to hold the optimal next state for a given state. Essentially a one-step optimal plan
 OPTIMAL_NEXT_STATE_DICT = collections.OrderedDict()
+#dictionary to hold the action to go the optimal next state
 OPTIMAL_ACTION_DICT = collections.OrderedDict()
-P_UI_GIVEN_A = collections.OrderedDict()
 
-#need to play with these params and try out what happens with and without assistance. 
-UI_GIVEN_A_NOISE = 0.1 #Lower the number, lower the error. Between 0 and 1
+#p(ui|a)
+P_UI_GIVEN_A = collections.OrderedDict() 
+UI_GIVEN_A_NOISE = 0.1 #Lower the number, lower the error. Between 0 and 1. If 0, the p(ui|a) is delta and same as the true mapping
+
+#p(um|ui)
 P_UM_GIVEN_UI = collections.OrderedDict()
-UM_GIVEN_UI_NOISE = 0.9 #Lower the number, lower the error. Between 0 and 1
+UM_GIVEN_UI_NOISE = 0.9 #Lower the number, lower the error. Between 0 and 1. If 0, no difference between ui and um
+
+#p(ui|um). dictionary to hold inferred ui
 P_UI_GIVEN_UM = collections.OrderedDict()
+#entropy threshold for assistance. between 0 and 1
 ENTROPY_THRESHOLD = 0.5
+
+#Assistance Type. Choice between Filter and Corrective. TODO. Maybe load it from file
 ASSISTANCE_TYPE = AssistanceType.Corrective
+
+#Boolean that decides whether the simulation is fully 'manual' vs. assisted
 IS_ASSISTANCE = False
 
 def create_state_transition_model():
@@ -277,7 +309,6 @@ def compute_p_ui_given_um(a, um):
 	normalization_constant = sum(P_UI_GIVEN_UM.values())
 	for u in P_UI_GIVEN_UM.keys():
 		P_UI_GIVEN_UM[u] = P_UI_GIVEN_UM[u]/normalization_constant
-
 
 def infer_intended_commands(a, um):
 	compute_p_ui_given_um(a, um)
