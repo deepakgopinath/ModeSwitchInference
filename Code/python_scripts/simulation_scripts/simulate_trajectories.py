@@ -77,11 +77,11 @@ OPTIMAL_ACTION_DICT = collections.OrderedDict()
 
 #p(ui|a)
 P_UI_GIVEN_A = collections.OrderedDict() 
-UI_GIVEN_A_NOISE = 0.1 #Lower the number, lower the error. Between 0 and 1. If 0, the p(ui|a) is delta and same as the true mapping
+UI_GIVEN_A_NOISE = 0.01 #Lower the number, lower the error. Between 0 and 1. If 0, the p(ui|a) is delta and same as the true mapping
 
 #p(um|ui)
 P_UM_GIVEN_UI = collections.OrderedDict()
-UM_GIVEN_UI_NOISE = 0.9 #Lower the number, lower the error. Between 0 and 1. If 0, no difference between ui and um
+UM_GIVEN_UI_NOISE = 0.01 #Lower the number, lower the error. Between 0 and 1. If 0, no difference between ui and um
 
 #p(ui|um). dictionary to hold inferred ui
 P_UI_GIVEN_UM = collections.OrderedDict()
@@ -92,7 +92,7 @@ ENTROPY_THRESHOLD = 0.5
 ASSISTANCE_TYPE = AssistanceType.Corrective
 
 #Boolean that decides whether the simulation is fully 'manual' vs. assisted
-IS_ASSISTANCE = False
+IS_ASSISTANCE = True
 
 def create_state_transition_model():
 	'''
@@ -149,10 +149,11 @@ def create_bounds_dict():
 				QUADRANT_BOUNDS[str(q_key)][d][b] = None
 
 def initialize_bounds():
-	'''
-	Quandrant bounds specify the region from which the initial robot and goal positions need to be sampled for each quadrant. Not used here. 
-	'''
+    '''
+    Quandrant bounds specify the region from which the initial robot and goal positions need to be sampled for each quadrant. Not used here. 
+    '''
     #initialize bounds for 'tr'
+
     QUADRANT_BOUNDS['1']['x']['min'] = (2*VIEWPORT_WS)/3 + ROBOT_RADIUS_S
     QUADRANT_BOUNDS['1']['x']['max'] = VIEWPORT_WS - ROBOT_RADIUS_S
     QUADRANT_BOUNDS['1']['y']['min'] = (2*VIEWPORT_HS)/3 + ROBOT_RADIUS_S
@@ -362,7 +363,7 @@ def infer_intended_commands(a, um):
 	
 	#compute entropy
 	normalized_h_of_p_ui_given_um = -np.dot(p_ui_given_um_vector, np.log2(p_ui_given_um_vector))/max_entropy 
-	print "UINTENDED, UM", u_intended, um
+	print "UINTENDED, UM, NORMALIZED_ENTROPY", u_intended, um, normalized_h_of_p_ui_given_um
 	if u_intended != um:
 		#check entropy to decide whether to intervene or not
 		if normalized_h_of_p_ui_given_um < ENTROPY_THRESHOLD: #intervene
