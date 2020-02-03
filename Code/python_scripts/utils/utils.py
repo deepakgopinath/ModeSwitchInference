@@ -35,6 +35,7 @@ class AssistanceType(Enum):
 class StartDirection(Enum):
     X = 0
     Y = 1
+    
 class RGOrient(Enum):
     '''
     Relative position of the goal with respect to the robot. This information is used for constructing properly shared paths in ModeInferenceEnv

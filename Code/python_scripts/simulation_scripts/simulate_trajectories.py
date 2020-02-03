@@ -8,14 +8,17 @@ import sys
 sys.path.append('../utils')
 from utils import VIEWPORT_H, VIEWPORT_W, SCALE, ROBOT_RADIUS, StartDirection, PI, AssistanceType
 import itertools
+import pickle
 import random
+import argparse
 from IPython import embed
 
-np.random.seed(0) #seed for reproducibility
+# np.random.seed(10) #seed for reproducibility
 
-NUM_TURNS = 3 #number of turns in the path
-NUM_LOCATIONS = NUM_TURNS + 2 #total number of 'pitstops' = turns+start+end point
+MAX_SIM_STEPS = 200
 
+NUM_TURNS = 2
+NUM_LOCATIONS = NUM_TURNS + 2
 #params for generating robot positions. Not used
 VIEWPORT_WS = VIEWPORT_W/SCALE
 VIEWPORT_HS = VIEWPORT_H/SCALE
@@ -86,13 +89,13 @@ UM_GIVEN_UI_NOISE = 0.01 #Lower the number, lower the error. Between 0 and 1. If
 #p(ui|um). dictionary to hold inferred ui
 P_UI_GIVEN_UM = collections.OrderedDict()
 #entropy threshold for assistance. between 0 and 1
-ENTROPY_THRESHOLD = 0.5
+ENTROPY_THRESHOLD = 0.8
 
 #Assistance Type. Choice between Filter and Corrective. TODO. Maybe load it from file
 ASSISTANCE_TYPE = AssistanceType.Corrective
 
 #Boolean that decides whether the simulation is fully 'manual' vs. assisted
-IS_ASSISTANCE = True
+IS_ASSISTANCE = False
 
 def create_state_transition_model():
 	'''
@@ -229,22 +232,33 @@ def generate_start_and_end_points(rgc):
 	goal_orientation = PI/2
 	return robot_position, goal_position, robot_init_orientation, goal_orientation
 
-def init_modes_in_which_motion_allowed_dict():
+def init_modes_in_which_motion_allowed_dict(start_direction):
 	'''
 	Specifies, for each location, the modes in which motion is allowed
 	'''
 	for i, s in enumerate(LOCATIONS[:-1]):
 		#TODO: RIGHT NOW THIS ASSUMES THAT THE START DIRECTION IS ALWAYS X. CAN CHANGE EASILY. 
-		if i % 2 == 0:
-			MODES_MOTION_ALLOWED[s] = ['x'] #Make this a function of start direction
-		else:
-			MODES_MOTION_ALLOWED[s] = ['y']
-		if i == LOCATION_OF_TURN: #if the location also happened to be the location where turning happens, add 't' to the allowed mode
-			MODES_MOTION_ALLOWED[s].append('t')
+		if start_direction == StartDirection.X:
+			if i % 2 == 0:
+				MODES_MOTION_ALLOWED[s] = ['x'] #Make this a function of start direction
+			else:
+				MODES_MOTION_ALLOWED[s] = ['y']
+			if i == LOCATION_OF_TURN: #if the location also happened to be the location where turning happens, add 't' to the allowed mode
+				MODES_MOTION_ALLOWED[s].append('t')
+		elif start_direction == StartDirection.Y:
+			if i % 2 == 0:
+				MODES_MOTION_ALLOWED[s] = ['y'] #Make this a function of start direction
+			else:
+				MODES_MOTION_ALLOWED[s] = ['x']
+			if i == LOCATION_OF_TURN: #if the location also happened to be the location where turning happens, add 't' to the allowed mode
+				MODES_MOTION_ALLOWED[s].append('t')
 			
 	MODES_MOTION_ALLOWED[LOCATIONS[-1]] = [] #no more modes for the last locations
 
 def create_optimal_next_state_dict():
+	'''
+	For every state, this function computes what is the optimal next state to be. 
+	'''
 	for s in STATES:
 		if LOCATIONS.index(s[0]) < LOCATION_OF_TURN or LOCATIONS.index(s[0]) > LOCATION_OF_TURN: #deal with locations before and after the turn location separately as they consist of ONLY linear motion.
 			if s[2] not in MODES_MOTION_ALLOWED[s[0]]: #if not in the proper mode, switch to the mode
@@ -382,47 +396,73 @@ def infer_intended_commands(a, um):
 	
 	return u_corrected
 
-def main():
-	r_to_g_config = 'tr' #initialize the relative configuration. Need to test with other configs. hopefully still works!!!
-	start_direction = StartDirection.X
-	start_mode = 'y'
 
-	create_bounds_dict()
-	initialize_bounds()
+def simulate_snp_interaction(args):
+	'''
+	Main simulation function. 
+	Input: args containing directory which contains all different combinations of simulation parameters. num_reps_per_condition = number of repetitions for each combination
+	'''
+	simulation_trial_dir = args.simulation_trial_dir
+	num_reps_per_condition = args.num_reps_per_condition
 	
-	robot_position, goal_position, robot_init_orientation, goal_orientation = generate_start_and_end_points(r_to_g_config)
-	WAYPOINTS[0] = robot_position
-	WAYPOINTS[-1] = goal_position
-	generate_waypoints(start_direction)
-
-
-	init_modes_in_which_motion_allowed_dict()
-	create_state_transition_model()
-	init_state_transition_model(r_to_g_config)
-	create_optimal_next_state_dict()
-	generate_optimal_control_dict()
-	init_p_ui_given_a()
-	init_p_um_given_ui()
-
-	current_state = (LOCATIONS[0], 0, start_mode) #initialize starting state.
-	num_steps = 0
-	while current_state[0] != LOCATIONS[-1]:
-		a = sample_a_given_s(current_state) #sample action given state
-		ui = sample_ui_given_a(a) #sample ui given action
-		um = sample_um_given_ui(ui) #sample um given ui
-		print "S, A, UI, UM", current_state, a, ui, um
-		
-		if IS_ASSISTANCE: #if assistance flag is true, activate assistanced
-			um = infer_intended_commands(a, um)
-		
-		next_state = sample_sp_given_s_um(current_state, um) #sample next state
-		num_steps += 1 #number of steps.
-		print "U_APPLIED, SP ", um, next_state
-		print "     "
-		current_state = next_state
+	#these globals are rewritten. 
+	global NUM_TURNS, NUM_LOCATIONS, UM_GIVEN_UI_NOISE, UI_GIVEN_A_NOISE, ENTROPY_THRESHOLD, LOCATIONS, LOCATION_OF_TURN, STATES, IS_ASSISTANCE
 	
-	print "TOTAL NUM STEPS ", num_steps
+	for i, trial in enumerate(os.listdir(simulation_trial_dir)):
+		with open(os.path.join(simulation_trial_dir, str(i) + '.pkl'), 'rb') as fp:
+			combination_dict = pickle.load(fp)
+		print "COMBINATION NUM ", i
+		print "      "
+		NUM_TURNS = combination_dict['num_turns'] #number of turns in the path
+		r_to_g_config = combination_dict['r_to_g_config']
+		start_direction = combination_dict['start_direction']
+		start_mode = combination_dict['start_mode']
+		UI_GIVEN_A_NOISE = combination_dict['ui_given_a_noise']
+		UM_GIVEN_UI_NOISE = combination_dict['um_given_ui_noise']
+		ENTROPY_THRESHOLD = combination_dict['entropy_threshold']
+		IS_ASSISTANCE = combination_dict['is_assistance']
+
+		#derived variables
+		NUM_LOCATIONS = NUM_TURNS + 2 #total number of 'pitstops' = turns+start+end point
+		LOCATION_OF_TURN = random.choice(range(1, NUM_LOCATIONS-1)) #The corner at which the robot needs to be turned. For simulations, this is never the 0th position.
+		LOCATIONS = ['p' + str(i) for i in range(NUM_LOCATIONS)]
+		#Generate list of states. State = (location, orientation, mode)
+		STATES = [s for s in itertools.product(LOCATIONS, ORIENTATIONS, MODES)]
+		init_modes_in_which_motion_allowed_dict(start_direction)
+		create_state_transition_model()
+		init_state_transition_model(r_to_g_config)
+		create_optimal_next_state_dict()
+		generate_optimal_control_dict()
+		init_p_ui_given_a()
+		init_p_um_given_ui()
+		
+		for rep in range(0, num_reps_per_condition):
+			print "REP_NUM", rep
+			current_state = (LOCATIONS[0], 0, start_mode)
+			num_steps = 0
+			while current_state[0] != LOCATIONS[-1]:
+				a = sample_a_given_s(current_state) #sample action given state
+				ui = sample_ui_given_a(a) #sample ui given action
+				um = sample_um_given_ui(ui) #sample um given ui
+				print "S, A, UI, UM", current_state, a, ui, um
+				if IS_ASSISTANCE: #if assistance flag is true, activate assistanced
+					um = infer_intended_commands(a, um)
+
+				next_state = sample_sp_given_s_um(current_state, um) #sample next state
+				num_steps += 1 #number of steps.
+				print "U_APPLIED, SP ", um, next_state
+				print "     "
+				current_state = next_state
+				if num_steps > MAX_SIM_STEPS:
+					print "MAX NUMBER OF STEPS REACHED, TIME OUT"
+					break
+			print "TOTAL NUM STEPS ", num_steps
+			#TODO save simulation results according to condition and rep number for analysis. When saving remove all print statements. 
 	
 
 if __name__ == '__main__':
-	main()
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--simulation_trial_dir', dest='simulation_trial_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'trial_generation_for_experiment_1', 'simulation_trial_dir'), help="The directory where trials will be stored are")
+	parser.add_argument('--num_reps_per_condition', action='store', type=int, default=10, help="number of repetetions for single combination of conditions ")
+	args = parser.parse_args()
+	simulate_snp_interaction(args)
