@@ -5,7 +5,10 @@ import itertools
 from IPython import embed
 import argparse
 import collections
-from utils import StartDirection
+import sys	
+sys.path.append('../utils_ms')
+from utils_ms import StartDirection, AssistanceType
+
 
 START_MODE_DICT = {StartDirection.X: {-1: 't', 1: 'y'},
               StartDirection.Y: {-1: 'x', 1: 't'}}
@@ -15,6 +18,7 @@ START_MODE_DICT = {StartDirection.X: {-1: 't', 1: 'y'},
 RG_CONFIGS = ['tr', 'tl', 'bl', 'br']
 NUM_TURNS = [1, 2, 3]
 START_DIRECTION = [StartDirection.X, StartDirection.Y]
+ASSISTANCE_TYPE = [AssistanceType.Filter, AssistanceType.Corrective]
 START_MODE = [-1, 1]
 UI_GIVEN_A_NOISE = [i/10.0 for i in range(1, 9, 2)]
 UM_GIVEN_UI_NOISE = [i/10.0 for i in range(1, 9, 2)]
@@ -28,11 +32,12 @@ def generate_simulation_trials(args):
 
 	trial_combinations = []
 	i = 0
-	for (r_to_g_config, num_turns, start_direction, start_mode, ui_given_a_noise, um_given_ui_noise, entropy_threshold, is_assistance) in itertools.product(RG_CONFIGS, NUM_TURNS, START_DIRECTION, START_MODE, UI_GIVEN_A_NOISE, UM_GIVEN_UI_NOISE, ENTROPY_THRESHOLD, IS_ASSISTANCE_OPTIONS):
+	for (r_to_g_config, num_turns, start_direction, assistance_type, start_mode, ui_given_a_noise, um_given_ui_noise, entropy_threshold, is_assistance) in itertools.product(RG_CONFIGS, NUM_TURNS, START_DIRECTION, ASSISTANCE_TYPE, START_MODE, UI_GIVEN_A_NOISE, UM_GIVEN_UI_NOISE, ENTROPY_THRESHOLD, IS_ASSISTANCE_OPTIONS):
 		combination_dict = collections.OrderedDict()
 		combination_dict['r_to_g_config'] = r_to_g_config
 		combination_dict['num_turns'] = num_turns
 		combination_dict['start_direction'] = start_direction
+		combination_dict['assistance_type'] = assistance_type
 		combination_dict['start_mode'] = START_MODE_DICT[start_direction][start_mode]
 		combination_dict['ui_given_a_noise'] = ui_given_a_noise
 		combination_dict['um_given_ui_noise'] = um_given_ui_noise

@@ -4,14 +4,15 @@
 import os
 import collections
 import numpy as np
+from IPython import embed
 import sys
-sys.path.append('../utils')
-from utils import VIEWPORT_H, VIEWPORT_W, SCALE, ROBOT_RADIUS, StartDirection, PI, AssistanceType
+sys.path.append('../utils_ms')
+from utils_ms import VIEWPORT_H, VIEWPORT_W, SCALE, ROBOT_RADIUS, StartDirection, PI, AssistanceType
 import itertools
 import pickle
 import random
 import argparse
-from IPython import embed
+
 
 # np.random.seed(10) #seed for reproducibility
 
@@ -39,7 +40,7 @@ R_TO_G_CONFIGS = {'tr':{'r':'3', 'g': '1'},
 
 #1D modes for SNP
 MODES = ['x', 'y', 't']
-#symbols for different locations. 
+#symbols for different locations.
 LOCATIONS = ['p' + str(i) for i in range(NUM_LOCATIONS)]
 #two distinct orientations. Initially robot is at 0, after turning the robot will be at PI/2
 ORIENTATIONS = [0, PI/2]
@@ -53,7 +54,7 @@ HIGH_LEVEL_ACTIONS = ['move_p', 'move_n', 'mode_r', 'mode_l']
 #empty dictionary to hold the state transition mode
 STATE_TRANSITION_MODEL = collections.OrderedDict()
 
-#transition function for mode switches. 
+#transition function for mode switches.
 MODE_SWITCH_TRANSITION = {'x': {'hp': 'y', 'hs': 't', 'sp': 'x', 'ss': 'x'},
 						  'y': {'hp': 't', 'hs': 'x', 'sp': 'y', 'ss': 'y'},
 						  't': {'hp': 'x', 'hs': 'y', 'sp': 't', 'ss': 't'}}
@@ -66,7 +67,7 @@ MODES_MOTION_ALLOWED = collections.OrderedDict()
 TRANSITION_FOR_ACTION =   {'tr': {'sp': {'x': 'next', 'y': 'next', 't': 'next'}, 'ss': {'x': 'prev', 'y': 'prev', 't': 'prev'}},
 					   'tl': {'sp': {'x': 'prev', 'y': 'next', 't': 'next'}, 'ss': {'x': 'next', 'y': 'prev', 't': 'prev'}},
 					   'br': {'sp': {'x': 'next', 'y': 'prev', 't': 'next'}, 'ss': {'x': 'prev', 'y': 'next', 't': 'prev'}},
-					   'bl': {'sp': {'x': 'prev', 'y': 'prev', 't': 'next'}, 'ss': {'x': 'next', 'y': 'next', 't': 'prev'}}			
+					   'bl': {'sp': {'x': 'prev', 'y': 'prev', 't': 'next'}, 'ss': {'x': 'next', 'y': 'next', 't': 'prev'}}
 						}
 
 #true mapping of a to u
@@ -79,7 +80,7 @@ OPTIMAL_NEXT_STATE_DICT = collections.OrderedDict()
 OPTIMAL_ACTION_DICT = collections.OrderedDict()
 
 #p(ui|a)
-P_UI_GIVEN_A = collections.OrderedDict() 
+P_UI_GIVEN_A = collections.OrderedDict()
 UI_GIVEN_A_NOISE = 0.01 #Lower the number, lower the error. Between 0 and 1. If 0, the p(ui|a) is delta and same as the true mapping
 
 #p(um|ui)
@@ -101,6 +102,11 @@ def create_state_transition_model():
 	'''
 	Creates the STATE_TRANSITION_MODEL dict. key = state, subkey = u. Note that the state transition mode is defined at the level of low-level commands.
 	'''
+	# global STATES
+	# global STATES, STATE_TRANSITION_MODEL
+	# print "HERE", STATES
+	# embed()
+	global STATE_TRANSITION_MODEL
 	for s in STATES:
 		STATE_TRANSITION_MODEL[s] = collections.OrderedDict()
 		for u in LOW_LEVEL_COMMANDS:
@@ -112,6 +118,9 @@ def init_state_transition_model(rgc):
 
 	rgc = robot to goal configuration. Depending on the relative configuration going to the next location in the path might require either ss or sp
 	'''
+	# global STATE_TRANSITION_MODEL
+	# embed()
+	global STATE_TRANSITION_MODEL, LOCATIONS
 	for s in STATE_TRANSITION_MODEL.keys(): #for all states in the world
 		for u in STATE_TRANSITION_MODEL[s].keys(): #for all available low-level commands in s
 			if u == 'hp' or u == 'hs': #if u is either hard puff or hard sip, only mode switch happens. Use the MODE_SWITCH_TRANSITION dict to pick the next mode
@@ -121,25 +130,26 @@ def init_state_transition_model(rgc):
 				STATE_TRANSITION_MODEL[s][u] = (s[0], s[1], s[2]) #by default store the same state as next state. Because if no motion happens, the resultant state is also the same state
 				for m in allowed_modes_for_motion:
 					if m == s[2]: #make sure that the allowed mode matches the mode in the state s. If it doesn't no motion will happen
-						if m != 't': #allowed motion mode is a linear mode, x or y. 
+						if m != 't': #allowed motion mode is a linear mode, x or y.
 							if TRANSITION_FOR_ACTION[rgc][u][m] == 'next':
 								new_loc_next = LOCATIONS[min(LOCATIONS.index(s[0]) + 1, len(LOCATIONS)-1 )]
 								STATE_TRANSITION_MODEL[s][u] = (new_loc_next, s[1], s[2])
 							elif TRANSITION_FOR_ACTION[rgc][u][m] == 'prev':
+								print LOCATIONS, s
 								new_loc_prev = LOCATIONS[max(LOCATIONS.index(s[0]) - 1, 0 )]
 								STATE_TRANSITION_MODEL[s][u] = (new_loc_prev, s[1], s[2])
-						elif m == 't':# if allowed mode is rotation mode, rotate the angle properly. 
+						elif m == 't':# if allowed mode is rotation mode, rotate the angle properly.
 							new_theta = s[1]
 							if TRANSITION_FOR_ACTION[rgc][u][m] == 'next' and s[1] == 0:
 								new_theta = min(PI/2, s[1] + PI/2) #max angle allowed is PI/2
 							elif TRANSITION_FOR_ACTION[rgc][u][m] == 'prev' and s[1] == PI/2:
 								new_theta = max(0, s[1] - PI/2) #min angle allowed is 0.0
 
-							STATE_TRANSITION_MODEL[s][u] = (s[0], new_theta, s[2])	
-			
+							STATE_TRANSITION_MODEL[s][u] = (s[0], new_theta, s[2])
+
 def create_bounds_dict():
 	'''
-	Create QUADRANT_BOUNDS dictionary. Not used here. 
+	Create QUADRANT_BOUNDS dictionary. Not used here.
 	'''
 	q_keys = [1,2,3,4]
 	dimensions = ['x', 'y']
@@ -153,7 +163,7 @@ def create_bounds_dict():
 
 def initialize_bounds():
     '''
-    Quandrant bounds specify the region from which the initial robot and goal positions need to be sampled for each quadrant. Not used here. 
+    Quandrant bounds specify the region from which the initial robot and goal positions need to be sampled for each quadrant. Not used here.
     '''
     #initialize bounds for 'tr'
 
@@ -217,7 +227,7 @@ def generate_waypoints(start_direction):
 def generate_start_and_end_points(rgc):
 	'''
 	rgc = robot to goal configuration. Depending on the relative configuration going to the next location in the path might require either ss or sp
-	
+
 	Generates initial robot and goal poses in (x,y, theta) space. Not used in this simulation
 	'''
 	rq = R_TO_G_CONFIGS[rgc]['r']
@@ -236,8 +246,9 @@ def init_modes_in_which_motion_allowed_dict(start_direction):
 	'''
 	Specifies, for each location, the modes in which motion is allowed
 	'''
+	global MODES_MOTION_ALLOWED, LOCATIONS
 	for i, s in enumerate(LOCATIONS[:-1]):
-		#TODO: RIGHT NOW THIS ASSUMES THAT THE START DIRECTION IS ALWAYS X. CAN CHANGE EASILY. 
+		#TODO: RIGHT NOW THIS ASSUMES THAT THE START DIRECTION IS ALWAYS X. CAN CHANGE EASILY.
 		if start_direction == StartDirection.X:
 			if i % 2 == 0:
 				MODES_MOTION_ALLOWED[s] = ['x'] #Make this a function of start direction
@@ -252,13 +263,14 @@ def init_modes_in_which_motion_allowed_dict(start_direction):
 				MODES_MOTION_ALLOWED[s] = ['x']
 			if i == LOCATION_OF_TURN: #if the location also happened to be the location where turning happens, add 't' to the allowed mode
 				MODES_MOTION_ALLOWED[s].append('t')
-			
+
 	MODES_MOTION_ALLOWED[LOCATIONS[-1]] = [] #no more modes for the last locations
 
 def create_optimal_next_state_dict():
 	'''
-	For every state, this function computes what is the optimal next state to be. 
+	For every state, this function computes what is the optimal next state to be.
 	'''
+	global STATES, LOCATIONS, LOCATION_OF_TURN, MODES_MOTION_ALLOWED, OPTIMAL_NEXT_STATE_DICT
 	for s in STATES:
 		if LOCATIONS.index(s[0]) < LOCATION_OF_TURN or LOCATIONS.index(s[0]) > LOCATION_OF_TURN: #deal with locations before and after the turn location separately as they consist of ONLY linear motion.
 			if s[2] not in MODES_MOTION_ALLOWED[s[0]]: #if not in the proper mode, switch to the mode
@@ -273,8 +285,8 @@ def create_optimal_next_state_dict():
 				else: #have already turned. now need to move to the next location in the allowed linear mode
 					if s[2] == MODES_MOTION_ALLOWED[s[0]][0]: #check if the linear mode is an allowed motion mode. If so, move
 						OPTIMAL_NEXT_STATE_DICT[s] = (LOCATIONS[min(LOCATIONS.index(s[0]) + 1, NUM_LOCATIONS)], s[1], s[2])
-					else:# if it is not the allowed motion mode, switch to the allowed motion 'linear mode'. 
-						OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1], MODES_MOTION_ALLOWED[s[0]][0]) 
+					else:# if it is not the allowed motion mode, switch to the allowed motion 'linear mode'.
+						OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1], MODES_MOTION_ALLOWED[s[0]][0])
 			else:
 				#already in turning mode
 				if s[1] != PI/2: #if not turned yet, go ahead and turn
@@ -282,13 +294,14 @@ def create_optimal_next_state_dict():
 				else: #if already turned
 					if s[2] == MODES_MOTION_ALLOWED[s[0]][0]: #check if the linear mode is an allowed motion mode. If so, move
 						OPTIMAL_NEXT_STATE_DICT[s] = (LOCATIONS[min(LOCATIONS.index(s[0]) + 1, NUM_LOCATIONS)], s[1], s[2])
-					else:# if it is not the allowed motion mode, switch to the allowed motion 'linear mode'. 
+					else:# if it is not the allowed motion mode, switch to the allowed motion 'linear mode'.
 						OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1], MODES_MOTION_ALLOWED[s[0]][0])
-					
+
 def generate_optimal_control_dict():
 	'''
 	Using the inverse mapping and the optimal next state dictionary, generate the optimal action for each state in optimal_next_state_dict
 	'''
+	global OPTIMAL_ACTION_DICT, OPTIMAL_NEXT_STATE_DICT, STATE_TRANSITION_MODEL
 	for s in OPTIMAL_NEXT_STATE_DICT:
 		sp = OPTIMAL_NEXT_STATE_DICT[s]
 		OPTIMAL_ACTION_DICT[s] = [k for k,v in STATE_TRANSITION_MODEL[s].items() if v == sp]
@@ -298,6 +311,7 @@ def init_p_ui_given_a():
 	'''
 	Generate a random p(ui | a). key = a, subkey = ui
 	'''
+	global P_UI_GIVEN_A
 	for k in TRUE_ACTION_TO_COMMAND.keys():
 		P_UI_GIVEN_A[k] = collections.OrderedDict()
 		for u in LOW_LEVEL_COMMANDS:
@@ -309,11 +323,12 @@ def init_p_ui_given_a():
 		normalization_constant = sum(P_UI_GIVEN_A[k].values())
 		#normalize the entries for a valid probability distribution
 		P_UI_GIVEN_A[k] = collections.OrderedDict({u:(v/normalization_constant) for u, v in P_UI_GIVEN_A[k].items()})
-	
+
 def init_p_um_given_ui():
 	'''
 	Generates a random p(um|ui). key = ui, subkey = um
 	'''
+	global P_UM_GIVEN_UI
 	for i in LOW_LEVEL_COMMANDS: #ui
 		P_UM_GIVEN_UI[i] = collections.OrderedDict()
 		for j in LOW_LEVEL_COMMANDS: #um
@@ -329,11 +344,13 @@ def init_p_um_given_ui():
 
 #SIMULATED HUMAN
 def sample_a_given_s(s): #this is essentially a look up from optimal_action_dict
+	global OPTIMAL_ACTION_DICT
 	assert s in OPTIMAL_ACTION_DICT, "Error in key. Current state not in optimal action dict" #sanity check
 	a = OPTIMAL_ACTION_DICT[s]
 	return a
 
 def sample_ui_given_a(a): #sample from p(ui|a)
+	global P_UI_GIVEN_A
 	p_vector = P_UI_GIVEN_A[a].values() #list of probabilities for ui
 	ui_index_vector = np.random.multinomial(1, p_vector) #sample from the multinomial distribution with distribution p_vector
 	ui_index = np.nonzero(ui_index_vector)[0][0] #grab the index of the index_vector which had a nonzero entry
@@ -341,13 +358,15 @@ def sample_ui_given_a(a): #sample from p(ui|a)
 	return ui
 
 def sample_um_given_ui(ui): #sample from p(um|ui)
+	global P_UM_GIVEN_UI
 	p_vector = P_UM_GIVEN_UI[ui].values() #list of probabilities for um given ui
-	um_index_vector = np.random.multinomial(1, p_vector) #sample from the multinomial distribution 
+	um_index_vector = np.random.multinomial(1, p_vector) #sample from the multinomial distribution
 	um_index = np.nonzero(um_index_vector)[0][0] #grab the index of the index_vector which had a nonzero entry
 	um = P_UM_GIVEN_UI[ui].keys()[um_index] #retrieve um
 	return um
 
 def sample_sp_given_s_um(s, u): #return new state given current state and low-level command. If u = None, return current_state
+	global STATE_TRANSITION_MODEL
 	if u is not None:
 		sp = STATE_TRANSITION_MODEL[s][u]
 		return sp
@@ -362,10 +381,11 @@ def compute_p_ui_given_um(a, um): #inference of ui given um
 	for u in P_UI_GIVEN_UM.keys(): #NORMALIZE POSTERIOR
 		P_UI_GIVEN_UM[u] = P_UI_GIVEN_UM[u]/normalization_constant
 
-def infer_intended_commands(a, um): 
+def infer_intended_commands(a, um):
 	'''
 	Assistance algorithm. Follows the pseudocode in paper
 	'''
+	global P_UI_GIVEN_UM, ENTROPY_THRESHOLD
 	compute_p_ui_given_um(a, um)
 	p_ui_given_um_vector = np.array(P_UI_GIVEN_UM.values())
 	p_ui_given_um_vector = p_ui_given_um_vector + np.finfo(p_ui_given_um_vector.dtype).tiny #need to add realmin to avoid nan issues with entropy calculation is p_ui_given_um_vector is delta distribution
@@ -374,48 +394,63 @@ def infer_intended_commands(a, um):
 	#uniform distribution for compute max entropy. which is used as a normalizer. Could be moved to global scope
 	uniform_distribution = np.array([1.0/p_ui_given_um_vector.size]*p_ui_given_um_vector.size)
 	max_entropy = -np.dot(uniform_distribution, np.log2(uniform_distribution))
-	
+
 	#compute entropy
-	normalized_h_of_p_ui_given_um = -np.dot(p_ui_given_um_vector, np.log2(p_ui_given_um_vector))/max_entropy 
-	print "UINTENDED, UM, NORMALIZED_ENTROPY", u_intended, um, normalized_h_of_p_ui_given_um
+	normalized_h_of_p_ui_given_um = -np.dot(p_ui_given_um_vector, np.log2(p_ui_given_um_vector))/max_entropy
+	# print "UINTENDED, UM, NORMALIZED_ENTROPY", u_intended, um, normalized_h_of_p_ui_given_um
 	if u_intended != um:
 		#check entropy to decide whether to intervene or not
 		if normalized_h_of_p_ui_given_um < ENTROPY_THRESHOLD: #intervene
-			print 'INTERVENED, LOW ENTROPY'
+			# print 'INTERVENED, LOW ENTROPY'
 			if ASSISTANCE_TYPE == AssistanceType.Filter:
 				u_corrected = None
 			elif ASSISTANCE_TYPE == AssistanceType.Corrective:
 				u_corrected = u_intended
 		else:
-			print 'NOT INTERVENED, HIGH ENTROPY'
-			u_corrected = um #Maybe keep this as None? because u intended is not same as um? 
-			
+			# print 'NOT INTERVENED, HIGH ENTROPY'
+			u_corrected = um #Maybe keep this as None? because u intended is not same as um?
+
 	else:
-		print 'u_intended same as um, no need to do anything'
+		# print 'u_intended same as um, no need to do anything'
 		u_corrected = um
-	
+
 	return u_corrected
 
 
 def simulate_snp_interaction(args):
 	'''
-	Main simulation function. 
+	Main simulation function.
 	Input: args containing directory which contains all different combinations of simulation parameters. num_reps_per_condition = number of repetitions for each combination
 	'''
 	simulation_trial_dir = args.simulation_trial_dir
 	num_reps_per_condition = args.num_reps_per_condition
+	simulation_results_dir = args.simulation_results_dir
+	if not os.path.exists(simulation_results_dir):
+		os.makedirs(simulation_results_dir)
+
+
+	#these globals are rewritten.
 	
-	#these globals are rewritten. 
-	global NUM_TURNS, NUM_LOCATIONS, UM_GIVEN_UI_NOISE, UI_GIVEN_A_NOISE, ENTROPY_THRESHOLD, LOCATIONS, LOCATION_OF_TURN, STATES, IS_ASSISTANCE
 	
-	for i, trial in enumerate(os.listdir(simulation_trial_dir)):
-		with open(os.path.join(simulation_trial_dir, str(i) + '.pkl'), 'rb') as fp:
+	for index, trial in enumerate(os.listdir(simulation_trial_dir)):
+		global NUM_TURNS, NUM_LOCATIONS, UM_GIVEN_UI_NOISE, UI_GIVEN_A_NOISE, ENTROPY_THRESHOLD, LOCATIONS, LOCATION_OF_TURN, STATES,ASSISTANCE_TYPE, IS_ASSISTANCE
+		global P_UI_GIVEN_UM, P_UM_GIVEN_UI, P_UI_GIVEN_A, STATE_TRANSITION_MODEL, OPTIMAL_ACTION_DICT, OPTIMAL_NEXT_STATE_DICT, MODES_MOTION_ALLOWED
+		P_UI_GIVEN_A = collections.OrderedDict()
+		P_UM_GIVEN_UI =collections.OrderedDict()
+		P_UI_GIVEN_UM = collections.OrderedDict()
+		STATE_TRANSITION_MODEL = collections.OrderedDict()
+		OPTIMAL_ACTION_DICT = collections.OrderedDict()
+		OPTIMAL_NEXT_STATE_DICT = collections.OrderedDict()
+		MODES_MOTION_ALLOWED = collections.OrderedDict()
+		
+		with open(os.path.join(simulation_trial_dir, str(index) + '.pkl'), 'rb') as fp:
 			combination_dict = pickle.load(fp)
-		print "COMBINATION NUM ", i
+		print "COMBINATION NUM ", index
 		print "      "
 		NUM_TURNS = combination_dict['num_turns'] #number of turns in the path
 		r_to_g_config = combination_dict['r_to_g_config']
 		start_direction = combination_dict['start_direction']
+		ASSISTANCE_TYPE = combination_dict['assistance_type']
 		start_mode = combination_dict['start_mode']
 		UI_GIVEN_A_NOISE = combination_dict['ui_given_a_noise']
 		UM_GIVEN_UI_NOISE = combination_dict['um_given_ui_noise']
@@ -423,11 +458,14 @@ def simulate_snp_interaction(args):
 		IS_ASSISTANCE = combination_dict['is_assistance']
 
 		#derived variables
+
 		NUM_LOCATIONS = NUM_TURNS + 2 #total number of 'pitstops' = turns+start+end point
 		LOCATION_OF_TURN = random.choice(range(1, NUM_LOCATIONS-1)) #The corner at which the robot needs to be turned. For simulations, this is never the 0th position.
 		LOCATIONS = ['p' + str(i) for i in range(NUM_LOCATIONS)]
+
 		#Generate list of states. State = (location, orientation, mode)
 		STATES = [s for s in itertools.product(LOCATIONS, ORIENTATIONS, MODES)]
+		
 		init_modes_in_which_motion_allowed_dict(start_direction)
 		create_state_transition_model()
 		init_state_transition_model(r_to_g_config)
@@ -436,33 +474,59 @@ def simulate_snp_interaction(args):
 		init_p_ui_given_a()
 		init_p_um_given_ui()
 		
+		
+
+		simulation_results = collections.OrderedDict()
+		simulation_results['index'] = index
+		simulation_results['combination_dict'] = combination_dict
+		simulation_results['trials'] = collections.OrderedDict()
+
 		for rep in range(0, num_reps_per_condition):
-			print "REP_NUM", rep
 			current_state = (LOCATIONS[0], 0, start_mode)
 			num_steps = 0
+			simulation_results['trials'][rep] = collections.defaultdict(list)
 			while current_state[0] != LOCATIONS[-1]:
 				a = sample_a_given_s(current_state) #sample action given state
 				ui = sample_ui_given_a(a) #sample ui given action
 				um = sample_um_given_ui(ui) #sample um given ui
-				print "S, A, UI, UM", current_state, a, ui, um
+				# print "S, A, UI, UM", current_state, a, ui, um
+				simulation_results['trials'][rep]['s'].append(current_state)
+				simulation_results['trials'][rep]['a'].append(a)
+				simulation_results['trials'][rep]['ui'].append(ui)
+				simulation_results['trials'][rep]['um_before'].append(um)
 				if IS_ASSISTANCE: #if assistance flag is true, activate assistanced
 					um = infer_intended_commands(a, um)
 
+				assistance_match_with_ground_truth = (um == TRUE_ACTION_TO_COMMAND[a])
+				simulation_results['trials'][rep]['assistance_match_with_ground_truth'].append(assistance_match_with_ground_truth)
+				simulation_results['trials'][rep]['um_after'].append(um)
 				next_state = sample_sp_given_s_um(current_state, um) #sample next state
+				simulation_results['trials'][rep]['sp'] = next_state
 				num_steps += 1 #number of steps.
-				print "U_APPLIED, SP ", um, next_state
-				print "     "
+				# print "U_APPLIED, SP ", um, next_state
+				# print "     "
 				current_state = next_state
 				if num_steps > MAX_SIM_STEPS:
-					print "MAX NUMBER OF STEPS REACHED, TIME OUT"
+					# print "MAX NUMBER OF STEPS REACHED, TIME OUT"
 					break
-			print "TOTAL NUM STEPS ", num_steps
-			#TODO save simulation results according to condition and rep number for analysis. When saving remove all print statements. 
-	
+
+			simulation_results['trials'][rep]['total_steps'] = num_steps
+			# print "TOTAL NUM STEPS ", num_steps
+
+
+		# embed()
+		simulation_result_file_path = os.path.join(simulation_results_dir, 'sim_'+str(index)+'.pkl')
+		with open(simulation_result_file_path, 'wb') as fp:
+			pickle.dump(simulation_results, fp)
+
+		
+
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--simulation_trial_dir', dest='simulation_trial_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'trial_generation_for_experiment_1', 'simulation_trial_dir'), help="The directory where trials will be stored are")
 	parser.add_argument('--num_reps_per_condition', action='store', type=int, default=10, help="number of repetetions for single combination of conditions ")
+	parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results'), help="The directory where the simulation trials will be stored")
+
 	args = parser.parse_args()
 	simulate_snp_interaction(args)
