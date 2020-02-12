@@ -430,8 +430,8 @@ def simulate_snp_interaction(args):
 
 
 	#these globals are rewritten.
-	
-	
+
+
 	for index, trial in enumerate(os.listdir(simulation_trial_dir)):
 		global NUM_TURNS, NUM_LOCATIONS, UM_GIVEN_UI_NOISE, UI_GIVEN_A_NOISE, ENTROPY_THRESHOLD, LOCATIONS, LOCATION_OF_TURN, STATES,ASSISTANCE_TYPE, IS_ASSISTANCE
 		global P_UI_GIVEN_UM, P_UM_GIVEN_UI, P_UI_GIVEN_A, STATE_TRANSITION_MODEL, OPTIMAL_ACTION_DICT, OPTIMAL_NEXT_STATE_DICT, MODES_MOTION_ALLOWED
@@ -442,7 +442,7 @@ def simulate_snp_interaction(args):
 		OPTIMAL_ACTION_DICT = collections.OrderedDict()
 		OPTIMAL_NEXT_STATE_DICT = collections.OrderedDict()
 		MODES_MOTION_ALLOWED = collections.OrderedDict()
-		
+
 		with open(os.path.join(simulation_trial_dir, str(index) + '.pkl'), 'rb') as fp:
 			combination_dict = pickle.load(fp)
 		print "COMBINATION NUM ", index
@@ -465,16 +465,17 @@ def simulate_snp_interaction(args):
 
 		#Generate list of states. State = (location, orientation, mode)
 		STATES = [s for s in itertools.product(LOCATIONS, ORIENTATIONS, MODES)]
-		
+
 		init_modes_in_which_motion_allowed_dict(start_direction)
 		create_state_transition_model()
 		init_state_transition_model(r_to_g_config)
 		create_optimal_next_state_dict()
+		import IPython; IPython.embed(banner1= 'check optimal')
 		generate_optimal_control_dict()
 		init_p_ui_given_a()
 		init_p_um_given_ui()
-		
-		
+
+
 
 		simulation_results = collections.OrderedDict()
 		simulation_results['index'] = index
@@ -519,7 +520,7 @@ def simulate_snp_interaction(args):
 		with open(simulation_result_file_path, 'wb') as fp:
 			pickle.dump(simulation_results, fp)
 
-		
+
 
 
 if __name__ == '__main__':

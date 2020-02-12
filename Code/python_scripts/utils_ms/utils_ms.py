@@ -31,11 +31,11 @@ PATH_HALF_WIDTH = INFLATION_FACTOR * ROBOT_RADIUS
 class AssistanceType(Enum):
     Filter = 0
     Corrective = 1
-    
+    No_Assistance = 2
 class StartDirection(Enum):
-    X = 3
+    X = 0
     Y = 1
-    
+
 class RGOrient(Enum):
     '''
     Relative position of the goal with respect to the robot. This information is used for constructing properly shared paths in ModeInferenceEnv
