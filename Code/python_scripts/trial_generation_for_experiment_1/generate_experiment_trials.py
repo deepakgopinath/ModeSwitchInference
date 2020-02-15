@@ -21,7 +21,7 @@ GOAL_RADIUS_S = GOAL_RADIUS/SCALE
 RG_CONFIGS = ['tr', 'tl', 'bl', 'br']
 NUM_TURNS = [3]
 START_DIRECTIONS = [StartDirection.X, StartDirection.Y]
-ASSISTANCE_TYPES = [AssistanceType.Filter, AssistanceType.Corrective, AssistanceType.No_Assistance]
+ASSISTANCE_TYPES = [0, 1, 2]
 
 ROBOT_GOAL_CONFIGURATIONS = {'tr':{'robot':[VIEWPORT_WS/4, VIEWPORT_HS/4],     'goal':[3*VIEWPORT_WS/4, 3*VIEWPORT_HS/4]},
                              'tl':{'robot':[3*VIEWPORT_WS/4, VIEWPORT_HS/4],   'goal':[VIEWPORT_WS/4, 3*VIEWPORT_HS/4]},
@@ -36,6 +36,8 @@ START_MODE_OPTIONS = [-1, 1] # if (x,y, theta) is the mode sequence, -1 refers t
 def generate_experiment_trials(args):
     num_reps_per_condition = args.num_reps_per_condition
     trial_dir = args.trial_dir
+    if not os.path.exists(trial_dir):
+        os.makedirs(trial_dir)
     index = 0
 
     for rg_config, num_turns, start_direction, assistance_type  in itertools.product(RG_CONFIGS, NUM_TURNS, START_DIRECTIONS, ASSISTANCE_TYPES):

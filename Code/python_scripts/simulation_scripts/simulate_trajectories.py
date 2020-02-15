@@ -95,8 +95,6 @@ ENTROPY_THRESHOLD = 0.8
 #Assistance Type. Choice between Filter and Corrective. TODO. Maybe load it from file
 ASSISTANCE_TYPE = AssistanceType.Corrective
 
-#Boolean that decides whether the simulation is fully 'manual' vs. assisted
-IS_ASSISTANCE = False
 
 def create_state_transition_model():
 	'''
@@ -433,7 +431,7 @@ def simulate_snp_interaction(args):
 
 
 	for index, trial in enumerate(os.listdir(simulation_trial_dir)):
-		global NUM_TURNS, NUM_LOCATIONS, UM_GIVEN_UI_NOISE, UI_GIVEN_A_NOISE, ENTROPY_THRESHOLD, LOCATIONS, LOCATION_OF_TURN, STATES,ASSISTANCE_TYPE, IS_ASSISTANCE
+		global NUM_TURNS, NUM_LOCATIONS, UM_GIVEN_UI_NOISE, UI_GIVEN_A_NOISE, ENTROPY_THRESHOLD, LOCATIONS, LOCATION_OF_TURN, STATES,ASSISTANCE_TYPE
 		global P_UI_GIVEN_UM, P_UM_GIVEN_UI, P_UI_GIVEN_A, STATE_TRANSITION_MODEL, OPTIMAL_ACTION_DICT, OPTIMAL_NEXT_STATE_DICT, MODES_MOTION_ALLOWED
 		P_UI_GIVEN_A = collections.OrderedDict()
 		P_UM_GIVEN_UI =collections.OrderedDict()
@@ -455,8 +453,6 @@ def simulate_snp_interaction(args):
 		UI_GIVEN_A_NOISE = combination_dict['ui_given_a_noise']
 		UM_GIVEN_UI_NOISE = combination_dict['um_given_ui_noise']
 		ENTROPY_THRESHOLD = combination_dict['entropy_threshold']
-		IS_ASSISTANCE = combination_dict['is_assistance']
-
 		#derived variables
 
 		NUM_LOCATIONS = NUM_TURNS + 2 #total number of 'pitstops' = turns+start+end point
@@ -470,7 +466,6 @@ def simulate_snp_interaction(args):
 		create_state_transition_model()
 		init_state_transition_model(r_to_g_config)
 		create_optimal_next_state_dict()
-		import IPython; IPython.embed(banner1= 'check optimal')
 		generate_optimal_control_dict()
 		init_p_ui_given_a()
 		init_p_um_given_ui()
@@ -495,14 +490,14 @@ def simulate_snp_interaction(args):
 				simulation_results['trials'][rep]['a'].append(a)
 				simulation_results['trials'][rep]['ui'].append(ui)
 				simulation_results['trials'][rep]['um_before'].append(um)
-				if IS_ASSISTANCE: #if assistance flag is true, activate assistanced
+				if ASSISTANCE_TYPE != AssistanceType.No_Assistance: #if assistance flag is true, activate assistanced
 					um = infer_intended_commands(a, um)
 
 				assistance_match_with_ground_truth = (um == TRUE_ACTION_TO_COMMAND[a])
 				simulation_results['trials'][rep]['assistance_match_with_ground_truth'].append(assistance_match_with_ground_truth)
 				simulation_results['trials'][rep]['um_after'].append(um)
 				next_state = sample_sp_given_s_um(current_state, um) #sample next state
-				simulation_results['trials'][rep]['sp'] = next_state
+				simulation_results['trials'][rep]['sp'].append(next_state)
 				num_steps += 1 #number of steps.
 				# print "U_APPLIED, SP ", um, next_state
 				# print "     "
@@ -514,11 +509,15 @@ def simulate_snp_interaction(args):
 			simulation_results['trials'][rep]['total_steps'] = num_steps
 			# print "TOTAL NUM STEPS ", num_steps
 
-
-		# embed()
-		simulation_result_file_path = os.path.join(simulation_results_dir, 'sim_'+str(index)+'.pkl')
-		with open(simulation_result_file_path, 'wb') as fp:
-			pickle.dump(simulation_results, fp)
+		for k, v in simulation_results['trials'].items():
+			individual_sim_result = collections.OrderedDict()
+			individual_sim_result['combination_dict'] = combination_dict
+			individual_sim_result['data'] = v
+			individual_sim_result['index'] = k + index*(num_reps_per_condition)
+			print(individual_sim_result['index'])
+			simulation_result_file_path = os.path.join(simulation_results_dir, 'sim_' + str(k + index*num_reps_per_condition) + '.pkl')
+			with open(simulation_result_file_path, 'wb') as fp:
+				pickle.dump(individual_sim_result, fp)
 
 
 

@@ -17,7 +17,7 @@ p8
 acutils_ms
 StartDirection
 p9
-(I3
+(I1
 tp10
 Rp11
 aa(lp12
@@ -45,11 +45,7 @@ aF0.7
 aa(lp24
 S'entropy_threshold'
 p25
-aF0.8
-aa(lp26
-S'is_assistance'
-p27
-aI00
-aatp28
-Rp29
+aF0.7
+aatp26
+Rp27
 .

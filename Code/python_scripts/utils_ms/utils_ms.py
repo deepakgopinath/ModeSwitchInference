@@ -32,6 +32,7 @@ class AssistanceType(Enum):
     Filter = 0
     Corrective = 1
     No_Assistance = 2
+    
 class StartDirection(Enum):
     X = 0
     Y = 1
