@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import sys
-sys.path.append('../utils')
-from utils import SCALE, VIEWPORT_W, VIEWPORT_H, ROBOT_RADIUS, GOAL_RADIUS, PI
-
+sys.path.append('../utils_ms')
+from utils_ms import SCALE, VIEWPORT_W, VIEWPORT_H, ROBOT_RADIUS, GOAL_RADIUS, PI
+from utils_ms import AssistanceType, StartDirection
 import numpy as np
 import math
 import argparse
@@ -12,6 +12,7 @@ import random
 import pickle
 import collections
 import itertools
+from IPython import embed
 
 
 QUADRANT_BOUNDS = collections.OrderedDict()
@@ -30,13 +31,12 @@ START_MODE_DICT = {'x': {-1: 't', 1: 'y'},
 
 #experiment params
 RG_CONFIGS = ['tr', 'tl', 'bl', 'br']
-NUM_TURNS = [1, 2, 3]
-START_DIMENSION = ['x', 'y', 't']
+NUM_TURNS = [2, 3] #or [1,3]
+START_DIMENSION = ['x', 'y']
 START_MODE = [-1, 1] # if (x,y, theta) is the mode sequence, -1 refers to the mode to the 'left' of the start direction and +1 refers to the mode on the right direction.
-
+ASSISTANCE_TYPE = [Assistance.Filter, Assistance.Corrective]
 
 R_TO_G_ORIENT_DIFF = PI/2
-NUM_TURNS = [1,2,3]
 
 def create_bounds_dict():
     q_keys = [1,2,3,4]
@@ -54,7 +54,7 @@ def initialize_bounds():
     QUADRANT_BOUNDS['1']['x']['min'] = (2*VIEWPORT_WS)/3 + ROBOT_RADIUS_S
     QUADRANT_BOUNDS['1']['x']['max'] = VIEWPORT_WS - ROBOT_RADIUS_S
     QUADRANT_BOUNDS['1']['y']['min'] = (2*VIEWPORT_HS)/3 + ROBOT_RADIUS_S
-    QUADRANT_BOUNDS['1']['y']['max'] = VIEWPORT_HS - ROBOT_RADIUS_S
+    QUADRANT_BOUNDS['1']['y']['max'] = VIEWPORT_HS - 3*ROBOT_RADIUS_S#leave some space on the top right corner for the mode display
 
     #initalize bounds for 'tl'
     QUADRANT_BOUNDS['2']['x']['min'] = ROBOT_RADIUS_S
@@ -153,7 +153,7 @@ def generate_trials(args):
         if trial_info_dict['env_params']['start_mode'] == 't':
             location_of_turn = 0
         else:
-            location_of_turn = random.choice(range(1, trial_info_dict['env_params']['num_turns'] + 2))
+            location_of_turn = random.choice(range(1, trial_info_dict['env_params']['num_turns'] + 1)) #can't be the first (0) or the last location for turning
 
         trial_info_dict['env_params']['location_of_turn'] = location_of_turn
 
