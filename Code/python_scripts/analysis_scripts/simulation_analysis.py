@@ -53,12 +53,14 @@
 
 import pickle
 import sys
+import collections
 sys.path.append('../utils_ms')
 import os
 import numpy as np
-import matplotlib
 import argparse
 from utils_ms import StartDirection, AssistanceType
+import matplotlib.pyplot as plt
+from IPython import embed
 
 class DataParser(object):
     """docstring forDataParser."""
@@ -68,17 +70,35 @@ class DataParser(object):
         self.simulation_files = os.listdir(simulation_results_dir)
         self.simulation_files = [os.path.join(self.simulation_results_dir, f) for f in self.simulation_files]
 
-    def parse_sim_files_for_specific_criteria(self, criteria, output_keys):
+    def check_if_sim_file_satisfies_criteria(self, criteria, combination_dict):
+        sim_file_satisfies_criteria = True
+        for key, value in criteria.items():
+            if value != 'all':
+                sim_file_satisfies_criteria = sim_file_satisfies_criteria and (combination_dict[key] in criteria[key])
+
+        return sim_file_satisfies_criteria
+
+    def return_all_sim_files(self):
+        return self.simulation_files
+
+    def parse_sim_files_for_specific_criteria(self, criteria):
         '''
         criteria is a dict with same keys as combination_dict
         output_keys should be a subset of the keys in trial['data']
         '''
-        for f in self.simulation_files:
+        sim_files_that_satisfies_criteria = []
+        for i, f in enumerate(self.simulation_files):
+            print('Processing file num', i)
             with open(f, 'rb') as fp:
                 simulation_result = pickle.load(fp)
-
             combination_dict = simulation_result['combination_dict']
-            embed()
+            sim_file_satisfies_criteria = self.check_if_sim_file_satisfies_criteria(criteria, combination_dict)
+            if sim_file_satisfies_criteria:
+                sim_files_that_satisfies_criteria.append(f)
+            else:
+                continue
+
+        return sim_files_that_satisfies_criteria
 
 class SimulationAnalysis(object):
     """docstring forSimulationAnalysis."""
@@ -98,20 +118,142 @@ class SimulationAnalysis(object):
         self.ENTROPY_THRESHOLD = [i/10.0 for i in range(5, 10)]
 
 
-    def perform_analysis(self):
-        pass
+    def perform_analysis(self, force_compute_list=[False, True]):
+        self._check_accuracy_of_corrected_um(force_compute_list[0])
+        self._compare_mode_switches_between_assistance_conditions(force_compute_list[1])
 
-    def _check_accuracy_of_corrected_um(self):
+    def _compare_mode_switches_between_assistance_conditions(self, force_compute=False):
         criteria = collections.OrderedDict()
         for key in self.combination_dict_keys:
             criteria[key] = 'all'
+
+        subset_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'subsets') #mayebe mvoe this to main function
+        if not os.path.exists(subset_path):
+            os.makedirs(subset_path)
+        compare_mode_switches_between_assistance_conditions_pklnames = os.path.join(subset_path,'compare_mode_switches_between_assistance_conditions_pklnames.pkl')
+        if os.path.exists(compare_mode_switches_between_assistance_conditions_pklnames):
+            with open(compare_mode_switches_between_assistance_conditions_pklnames, 'rb') as fp:
+                sim_files_that_satisfies_criteria = pickle.load(fp)
+        else:
+            sim_files_that_satisfies_criteria = self.data_parser.return_all_sim_files()
+
+        results_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
+        if not os.path.exists(results_dir_path):
+            os.makedirs(results_dir_path)
+
+
+        #for each ui/a and uim_ui collect the num of modes switches for for each condition
+
+        ui_a_vs_um_ui_matrix_for_total_steps_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_total_steps.pkl')
+        if os.path.exists(ui_a_vs_um_ui_matrix_for_total_steps_filename) and not force_compute:
+            with open(ui_a_vs_um_ui_matrix_for_total_steps_filename, 'rb') as fp:
+                ui_a_vs_um_ui_matrix_for_total_steps = pickle.load(fp)
+        else:
+            ui_a_vs_um_ui_matrix_for_total_steps = collections.OrderedDict()
+            for i, ui_a in enumerate(self.UI_GIVEN_A_NOISE):
+                ui_a_vs_um_ui_matrix_for_total_steps[ui_a] = collections.OrderedDict()
+                for j, um_ui in enumerate(self.UM_GIVEN_UI_NOISE):
+                    print("UI_A and UM_UI", ui_a, um_ui)
+                    ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui] = collections.defaultdict(list)
+                    for k, sf in enumerate(sim_files_that_satisfies_criteria):
+                        with open(sf, 'rb') as fp:
+                            simulation_result = pickle.load(fp)
+                        if simulation_result['combination_dict']['ui_given_a_noise'] == ui_a and simulation_result['combination_dict']['um_given_ui_noise'] == um_ui and simulation_result['combination_dict']['entropy_threshold'] == 0.9:
+                            ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][simulation_result['combination_dict']['assistance_type']].append(simulation_result['data']['total_steps'])
+
+            with open(ui_a_vs_um_ui_matrix_for_total_steps_filename, 'wb') as fp:
+                pickle.dump(ui_a_vs_um_ui_matrix_for_total_steps, fp)
+
+
+        for i, ui_a in enumerate(self.UI_GIVEN_A_NOISE):
+            filter_list_means = []
+            corrective_list_means = []
+            no_assistance_list_means = []
+            for j, um_ui in enumerate(self.UM_GIVEN_UI_NOISE):
+                corrective_list_means.append(np.mean(ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][AssistanceType.Corrective]))
+                filter_list_means.append(np.mean(ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][AssistanceType.Filter]))
+                no_assistance_list_means.append(np.mean(ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][AssistanceType.No_Assistance]))
+
+            fig, ax = plt.subplots()
+            N = 4
+            ind = np.arange(N)*3
+            width = 0.8
+            p1 = ax.bar(ind, no_assistance_list_means, bottom=0, color='#7f6d5f')
+            p2 = ax.bar(ind+width, filter_list_means, bottom=0,color='#557f2d')
+            p3 = ax.bar(ind+2*width, corrective_list_means, bottom=0, color='#2d7f5e')
+
+            ax.set_title('Total Number of Steps for a given UI_GIVEN_A_NOISE {} noise levels'.format(str(ui_a)))
+            ax.set_xticks(ind+1.5*width)
+            ax.set_xticklabels(('0.1', '0.3', '0.5', '0.7'))
+            ax.set_ylabel('Total number of steps')
+            ax.set_xlabel('um_ui_noise')
+
+            # ax.legend((p1[0], p2[0], p3[0]), ('No_Assistance', 'Filter', 'Corrective'))
+            ax.autoscale_view()
+
+            plt.show()
+
+        embed(banner1='check dict')
+
+
+
+    def _check_accuracy_of_corrected_um(self, force_compute=False):
+        criteria = collections.OrderedDict()
+        #init all criteria keys to be all.
+        for key in self.combination_dict_keys:
+            criteria[key] = 'all'
+
+        #for those keys that need to be filtered. replace 'all' with a list containing the allowed values for the key
         criteria['assistance_type'] = [AssistanceType.Corrective]
-        output_keys = ['assistance_match_with_ground_truth']
-        data = self.data_parser.parse_sim_files_for_specific_criteria(criteria, output_keys)
+
+        subset_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'subsets')
+        if not os.path.exists(subset_path):
+            os.makedirs(subset_path)
+
+        results_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
+        if not os.path.exists(results_dir_path):
+            os.makedirs(results_dir_path)
+        only_corrective_subset_pkl_name = os.path.join(subset_path,'only_corrective_subset.pkl')
+        if os.path.exists(only_corrective_subset_pkl_name):
+            with open(only_corrective_subset_pkl_name, 'rb') as fp:
+                sim_files_that_satisfies_criteria = pickle.load(fp)
+        else:
+            sim_files_that_satisfies_criteria = self.data_parser.parse_sim_files_for_specific_criteria(criteria)
+            with open(only_corrective_subset_pkl_name, 'wb') as fp:
+                pickle.dump(sim_files_that_satisfies_criteria, fp)
+                #save this list and use it for later.
+
+
+        ui_a_vs_um_ui_matrix_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_assistance_match_with_ground_truth.pkl')
+        if os.path.exists(ui_a_vs_um_ui_matrix_filename) and not force_compute:
+            with open(ui_a_vs_um_ui_matrix_filename, 'rb') as fp:
+                ui_a_vs_um_ui_matrix = pickle.load(fp)
+        else:
+            ui_a_vs_um_ui_matrix = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
+            for i,ui_a in enumerate(self.UI_GIVEN_A_NOISE):
+                for j, um_ui in enumerate(self.UM_GIVEN_UI_NOISE):
+                    print("UI_A and UM_UI", ui_a, um_ui)
+                    assistance_match_with_ground_truth_list = []
+                    for k, sf in enumerate(sim_files_that_satisfies_criteria):
+                        with open(sf, 'rb') as fp:
+                            simulation_result = pickle.load(fp)
+                        if simulation_result['combination_dict']['ui_given_a_noise'] == ui_a and simulation_result['combination_dict']['um_given_ui_noise'] == um_ui:
+                            assistance_match_with_ground_truth_list.extend(simulation_result['data']['assistance_match_with_ground_truth'])
+                        else:
+                            pass
+
+                    percentage_of_correct_assistance = float(sum(assistance_match_with_ground_truth_list))/len(assistance_match_with_ground_truth_list)
+                    ui_a_vs_um_ui_matrix[i, j] = percentage_of_correct_assistance
+            with open(ui_a_vs_um_ui_matrix_filename, 'wb') as fp:
+                pickle.dump(ui_a_vs_um_ui_matrix, fp)
+
+        print('UI_A vs UM_UI for ASSISTANCE MATCH WITH GROUND TRUTH', ui_a_vs_um_ui_matrix)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results'), help="The directory where the simulation trials will be stored")
     args = parser.parse_args()
+
     sa = SimulationAnalysis(args)
+    sa.perform_analysis()
