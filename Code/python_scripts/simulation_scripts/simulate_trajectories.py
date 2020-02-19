@@ -412,7 +412,7 @@ def infer_intended_commands(a, um):
 		# print 'u_intended same as um, no need to do anything'
 		u_corrected = um
 
-	return u_corrected, normalized_h_of_p_ui_given_um, (normalized_h_of_p_ui_given_um <= ENTROPY_THRESHOLD)
+	return u_corrected, normalized_h_of_p_ui_given_um, (normalized_h_of_p_ui_given_um <= ENTROPY_THRESHOLD), (u_intended == um)
 
 
 def simulate_snp_interaction(args):
@@ -491,12 +491,13 @@ def simulate_snp_interaction(args):
 				simulation_results['trials'][rep]['ui'].append(ui)
 				simulation_results['trials'][rep]['um_before'].append(um)
 				if ASSISTANCE_TYPE != AssistanceType.No_Assistance: #if assistance flag is true, activate assistanced
-					um, normalized_h_of_p_ui_given_um, is_normalized_entropy_less_than_threshold = infer_intended_commands(a, um)
+					um, normalized_h_of_p_ui_given_um, is_normalized_entropy_less_than_threshold, is_u_intended_equals_um = infer_intended_commands(a, um)
 
 				assistance_match_with_ground_truth = (um == TRUE_ACTION_TO_COMMAND[a])
 				simulation_results['trials'][rep]['assistance_match_with_ground_truth'].append(assistance_match_with_ground_truth)
-                simulation_results['trials'][rep]['normalized_h_of_p_ui_given_um'].append(normalized_h_of_p_ui_given_um)
-                simulation_results['trials'][rep]['is_normalized_entropy_less_than_threshold'].append(is_normalized_entropy_less_than_threshold)
+				simulation_results['trials'][rep]['normalized_h_of_p_ui_given_um'].append(normalized_h_of_p_ui_given_um)
+				simulation_results['trials'][rep]['is_normalized_entropy_less_than_threshold'].append(is_normalized_entropy_less_than_threshold)
+				simulation_results['trials'][rep]['is_u_intended_equals_um'].append(is_u_intended_equals_um)
 				simulation_results['trials'][rep]['um_after'].append(um)
 				next_state = sample_sp_given_s_um(current_state, um) #sample next state
 				simulation_results['trials'][rep]['sp'].append(next_state)
@@ -528,7 +529,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--simulation_trial_dir', dest='simulation_trial_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'trial_generation_for_experiment_1', 'simulation_trial_dir'), help="The directory where trials will be stored are")
 	parser.add_argument('--num_reps_per_condition', action='store', type=int, default=10, help="number of repetetions for single combination of conditions ")
-	parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results_with_entropy'), help="The directory where the simulation trials will be stored")
+	parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results_new'), help="The directory where the simulation trials will be stored")
 
 	args = parser.parse_args()
 	simulate_snp_interaction(args)
