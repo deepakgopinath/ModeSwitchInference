@@ -476,10 +476,10 @@ def simulate_snp_interaction(args):
 		init_modes_in_which_motion_allowed_dict(start_direction)
 		create_state_transition_model()
 		init_state_transition_model(r_to_g_config)
-		
+
 		create_optimal_next_state_dict()
 		generate_optimal_control_dict()
-		
+
 		init_p_ui_given_a()
 		init_p_um_given_ui()
 
@@ -542,7 +542,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--simulation_trial_dir', dest='simulation_trial_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'trial_generation_for_experiment_1', 'simulation_trial_dir'), help="The directory where trials will be stored are")
 	parser.add_argument('--num_reps_per_condition', action='store', type=int, default=10, help="number of repetetions for single combination of conditions ")
-	parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results_new'), help="The directory where the simulation trials will be stored")
+	parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results_with_entropy'), help="The directory where the simulation trials will be stored")
 
 	args = parser.parse_args()
 	simulate_snp_interaction(args)
