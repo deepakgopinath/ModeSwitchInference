@@ -58,9 +58,10 @@ sys.path.append('../utils_ms')
 import os
 import numpy as np
 import argparse
-from utils_ms import StartDirection, AssistanceType
+from utils_ms import StartDirection, AssistanceType, PI
 import matplotlib.pyplot as plt
 from IPython import embed
+import itertools
 
 class DataParser(object):
     """docstring forDataParser."""
@@ -106,7 +107,7 @@ class SimulationAnalysis(object):
         super(SimulationAnalysis, self).__init__()
         self.simulation_results_dir = args.simulation_results_dir
         self.data_parser = DataParser(self.simulation_results_dir)
-        self.combination_dict_keys = ['r_to_g_config', 'num_turns', 'start_direction', 'assistance_type', 'start_mode', 'ui_given_a_noise', 'um_given_ui_noise', 'entropy_threshold']
+        self.combination_dict_keys = ['r_to_g_config', 'num_turns', 'start_direction', 'assistance_type', 'start_mode', 'ui_given_a_noise', 'um_given_ui_noise', 'entropy_threshold', 'target_orientation']
         #experiment params
         self.RG_CONFIGS = ['tr', 'tl', 'bl', 'br']
         self.NUM_TURNS = [1, 2, 3]
@@ -116,116 +117,165 @@ class SimulationAnalysis(object):
         self.UI_GIVEN_A_NOISE = [i/10.0 for i in range(1, 9, 2)]
         self.UM_GIVEN_UI_NOISE = [i/10.0 for i in range(1, 9, 2)]
         self.ENTROPY_THRESHOLD = [i/10.0 for i in range(5, 10)]
+        self.TARGET_ORIENTATIONS = [-PI/2, PI/2]
 
 
-    def perform_analysis(self, force_compute_list=[False, False, False]):
+    def perform_analysis(self, force_compute_list=[False, False, True]):
         self._check_accuracy_of_corrected_um(force_compute_list[0])
         self._compare_mode_switches_between_assistance_conditions(force_compute_list[1])
-        self._compute_percentage_of_intervention(force_compute_list[2])
+        self._compute_percentage_of_intervened(force_compute_list[2])
 
-    def _compute_percentage_of_intervention(self, force_compute=False):
-        criteria=collections.OrderedDict()
+    def _compute_percentage_of_intervened(self, force_compute=False):
+        print("COMPUTE PERCENTAGE INTERVENED")
+        criteria = collections.OrderedDict()
         for key in self.combination_dict_keys:
             criteria[key] = 'all'
 
         subset_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'subsets') #mayebe mvoe this to main function
         if not os.path.exists(subset_path):
             os.makedirs(subset_path)
-
-        compute_percentage_of_is_intervened_pklnames = os.path.join(subset_path, 'compute_percentage_of_is_intervened_pklnames.pkl')
-        if os.path.exists(compute_percentage_of_is_intervened_pklnames):
-            with open(compute_percentage_of_is_intervened_pklnames, 'rb') as fp:
+        compare_mode_switches_between_assistance_conditions_pklnames = os.path.join(subset_path,'is_intervened_pklnames.pkl')
+        if os.path.exists(compare_mode_switches_between_assistance_conditions_pklnames):
+            with open(compare_mode_switches_between_assistance_conditions_pklnames, 'rb') as fp:
                 sim_files_that_satisfies_criteria = pickle.load(fp)
         else:
-            sim_files_that_satisfies_criteria = self.data_parser.return_all_sim_files()
-            with open(compute_percentage_of_is_intervened_pklnames, 'wb') as fp:
-                pickle.dump(sim_files_that_satisfies_criteria, fp)
+            sim_files_that_satisfies_criteria = sorted(self.data_parser.return_all_sim_files())
+
 
         results_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
         if not os.path.exists(results_dir_path):
             os.makedirs(results_dir_path)
+        # embed(banner1='check files')
 
-        ui_a_vs_um_ui_matrix_for_is_intervened_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_is_intervened.pkl')
-        ui_a_vs_um_ui_matrix_for_is_u_intended_equals_um_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_is_u_intended_equals_um.pkl')
-        ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold.pkl')
+        ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um.pkl')
         ui_a_vs_um_ui_matrix_for_normalized_entropy_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_normalized_entropy.pkl')
-        ui_a_vs_um_ui_matrix_for_is_intervened_after_ui_not_equals_um_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_is_intervened_after_ui_not_equals_um.pkl')
-        if os.path.exists(ui_a_vs_um_ui_matrix_for_is_intervened_filename) and not force_compute: #existence of one of them ensure the others exist
-            with open(ui_a_vs_um_ui_matrix_for_is_intervened_filename, 'rb') as fp:
-                ui_a_vs_um_ui_matrix_for_is_intervened = pickle.load(fp)
-            with open(ui_a_vs_um_ui_matrix_for_is_u_intended_equals_um_filename, 'rb') as fp:
-                ui_a_vs_um_ui_matrix_for_is_u_intended_equals_um = pickle.load(fp)
-            with open(ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold_filename, 'rb') as fp:
-                ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold = pickle.load(fp)
+        ui_a_vs_um_ui_matrix_for_is_intervened_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_is_intervened.pkl')
+        ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um.pkl')
+        ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold.pkl')
+
+        u_intended_not_equals_um_list_filename = os.path.join(results_dir_path, 'u_intended_not_equals_um_list.pkl')
+        normalized_entropy_list_filename = os.path.join(results_dir_path, 'normalized_entropy_list.pkl')
+        is_intervened_list_filename = os.path.join(results_dir_path, 'is_intervened_list.pkl')
+        is_intervened_after_u_intended_not_equals_um_list_filename = os.path.join(results_dir_path, 'is_intervened_after_u_intended_not_equals_um_list.pkl')
+        is_normalized_entropy_less_than_threshold_list_filename = os.path.join(results_dir_path, 'is_normalized_entropy_less_than_threshold_list.pkl')
+
+        if os.path.exists(u_intended_not_equals_um_list_filename) and not force_compute:
+            print('LOADING FROM FILE')
+
+
+            with open(ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um_filename, 'rb') as fp:
+                ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um = pickle.load(fp)
             with open(ui_a_vs_um_ui_matrix_for_normalized_entropy_filename, 'rb') as fp:
                 ui_a_vs_um_ui_matrix_for_normalized_entropy = pickle.load(fp)
-            with open(ui_a_vs_um_ui_matrix_for_is_intervened_after_ui_not_equals_um_filename, 'rb') as fp:
-                ui_a_vs_um_ui_matrix_for_is_intervened_after_ui_not_equals_um = pickle.load(fp)
+            with open(ui_a_vs_um_ui_matrix_for_is_intervened_filename, 'rb') as fp:
+                ui_a_vs_um_ui_matrix_for_is_intervened = pickle.load(fp)
+            with open(ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um_filename, 'rb') as fp:
+                ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um = pickle.load(fp)
+            with open(ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold_filename, 'rb') as fp:
+                ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold = pickle.load(fp)
+
+            with open(u_intended_not_equals_um_list_filename, 'rb') as fp:
+                u_intended_not_equals_um_list = pickle.load(fp)
+            with open(normalized_entropy_list_filename, 'rb') as fp:
+                normalized_entropy_list = pickle.load(fp)
+            with open(is_intervened_list_filename, 'rb') as fp:
+                is_intervened_list = pickle.load(fp)
+            with open(is_intervened_after_u_intended_not_equals_um_list_filename, 'rb') as fp:
+                is_intervened_after_u_intended_not_equals_um_list = pickle.load(fp)
+            with open(is_normalized_entropy_less_than_threshold_list_filename, 'rb') as fp:
+                is_normalized_entropy_less_than_threshold_list = pickle.load(fp)
+
+
         else:
-            ui_a_vs_um_ui_matrix_for_is_intervened = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
-            ui_a_vs_um_ui_matrix_for_is_u_intended_equals_um = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
-            ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
+            normalized_entropy_list = collections.OrderedDict()
+            u_intended_not_equals_um_list = collections.OrderedDict()
+            is_intervened_list = collections.OrderedDict()
+            is_intervened_after_u_intended_not_equals_um_list = collections.OrderedDict()
+            is_normalized_entropy_less_than_threshold_list = collections.OrderedDict()
+
+            for ui_a in self.UI_GIVEN_A_NOISE:
+                normalized_entropy_list[ui_a] = collections.defaultdict(list)
+                u_intended_not_equals_um_list[ui_a] = collections.defaultdict(list)
+                is_intervened_list[ui_a] = collections.defaultdict(list)
+                is_intervened_after_u_intended_not_equals_um_list[ui_a] = collections.defaultdict(list)
+                is_normalized_entropy_less_than_threshold_list[ui_a] = collections.defaultdict(list)
+
+            for k, sf in enumerate(sim_files_that_satisfies_criteria):
+                print(k)
+                with open(sf, 'rb') as fp:
+                    simulation_result = pickle.load(fp)
+
+                ui_a = simulation_result['combination_dict']['ui_given_a_noise']
+                um_ui = simulation_result['combination_dict']['um_given_ui_noise']
+                u_intended_equals_um = simulation_result['data']['is_u_intended_equals_um']
+                is_normalized_entropy_less_than_threshold = simulation_result['data']['is_normalized_entropy_less_than_threshold']
+
+                normalized_entropy_list[ui_a][um_ui].extend(simulation_result['data']['normalized_h_of_p_ui_given_um'])
+                is_intervened_list[ui_a][um_ui].extend([a and not b for a, b in zip(is_normalized_entropy_less_than_threshold, u_intended_equals_um)]) #overall percentage
+                u_intended_not_equals_um_list[ui_a][um_ui].extend([not a for a in u_intended_equals_um])
+                is_normalized_entropy_less_than_threshold_list[ui_a][um_ui].extend(is_normalized_entropy_less_than_threshold)
+                temp_list = []
+                for ui_equals_um in u_intended_equals_um:
+                    if not ui_equals_um:
+                        temp_list.append(is_normalized_entropy_less_than_threshold)
+
+                is_intervened_after_u_intended_not_equals_um_list[ui_a][um_ui].extend(temp_list)
+
+            # embed(banner1='check list')
+            with open(normalized_entropy_list_filename, 'wb') as fp:
+                pickle.dump(normalized_entropy_list, fp)
+            with open(u_intended_not_equals_um_list_filename, 'wb') as fp:
+                pickle.dump(u_intended_not_equals_um_list, fp)
+            with open(is_intervened_list_filename, 'wb') as fp:
+                pickle.dump(is_intervened_list, fp)
+            with open(is_intervened_after_u_intended_not_equals_um_list_filename, 'wb') as fp:
+                pickle.dump(is_intervened_after_u_intended_not_equals_um_list, fp)
+            with open(is_normalized_entropy_less_than_threshold_list_filename, 'wb') as fp:
+                pickle.dump(is_normalized_entropy_less_than_threshold_list, fp)
+
+            flatten = itertools.chain.from_iterable
+
+            ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
             ui_a_vs_um_ui_matrix_for_normalized_entropy = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
-            ui_a_vs_um_ui_matrix_for_is_intervened_after_ui_not_equals_um = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
+            ui_a_vs_um_ui_matrix_for_is_intervened = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
+            ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
+            ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
 
             for i, ui_a in enumerate(self.UI_GIVEN_A_NOISE):
                 for j, um_ui in enumerate(self.UM_GIVEN_UI_NOISE):
-                    print("UI_A and UM_UI", ui_a, um_ui)
-                    is_intervened_list = []
-                    is_u_intended_equals_um_list = []
-                    is_normalized_entropy_less_than_threshold_list = []
-                    normalized_entropy_list = []
-                    is_intervened_after_ui_not_equals_um_list = []
-                    for k, sf, in enumerate(sim_files_that_satisfies_criteria):
-                        with open(sf, 'rb') as fp:
-                            simulation_result = pickle.load(fp)
-                        if simulation_result['combination_dict']['ui_given_a_noise'] == ui_a and simulation_result['combination_dict']['um_given_ui_noise'] == um_ui:
-                            is_intervened_list.extend([e and not u for e, u in zip(simulation_result['data']['is_normalized_entropy_less_than_threshold'], simulation_result['data']['is_u_intended_equals_um'])])
-                            is_u_intended_equals_um_list.extend(simulation_result['data']['is_u_intended_equals_um'])
-                            is_normalized_entropy_less_than_threshold_list.extend(simulation_result['data']['is_normalized_entropy_less_than_threshold'])
-                            normalized_entropy_list.extend(simulation_result['data']['normalized_h_of_p_ui_given_um'])
-                            local_list_for_intervention = []
-                            for ind, ui_e_um in enumerate(simulation_result['data']['is_u_intended_equals_um']):
-                                if not ui_e_um:
-                                    if simulation_result['data']['is_normalized_entropy_less_than_threshold'][ind]:
-                                        local_list_for_intervention.append(True)
-                                    else:
-                                        local_list_for_intervention.append(False)
-                            is_intervened_after_ui_not_equals_um_list.extend(local_list_for_intervention)
-                        else:
-                            pass
+                    print(ui_a, um_ui)
+                    average_normalized_entropy = float(sum(normalized_entropy_list[ui_a][um_ui]))/len(normalized_entropy_list[ui_a][um_ui])
+                    percentage_normalized_entropy_less_than_threshold = float(sum(is_normalized_entropy_less_than_threshold_list[ui_a][um_ui]))/len(is_normalized_entropy_less_than_threshold_list[ui_a][um_ui])
+                    percentage_is_intervened = float(sum(is_intervened_list[ui_a][um_ui]))/len(is_intervened_list[ui_a][um_ui])
+                    percentage_u_intended_not_equals_um = float(sum(u_intended_not_equals_um_list[ui_a][um_ui]))/len(u_intended_not_equals_um_list[ui_a][um_ui])
+                    temp_list = list(flatten(is_intervened_after_u_intended_not_equals_um_list[ui_a][um_ui]))
+                    percentage_is_intervened_after_u_intended_not_equals_um = float(sum(temp_list))/len(temp_list)
+                    ui_a_vs_um_ui_matrix_for_normalized_entropy[i,j] = average_normalized_entropy
+                    ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um[i,j] = percentage_u_intended_not_equals_um
+                    ui_a_vs_um_ui_matrix_for_is_intervened[i,j] = percentage_is_intervened
+                    ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um[i,j] = percentage_is_intervened_after_u_intended_not_equals_um
+                    ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold[i, j] = percentage_normalized_entropy_less_than_threshold
 
-                    percentage_intervened = float(sum(is_intervened_list))/len(is_intervened_list)
-                    percentage_is_u_intended_equals_um = float(sum(is_u_intended_equals_um_list))/len(is_u_intended_equals_um_list)
-                    percentage_is_normalized_entropy_less_than_threshold = float(sum(is_normalized_entropy_less_than_threshold_list))/len(is_normalized_entropy_less_than_threshold_list)
-                    percentage_intervened_after_ui_not_equals_um = float(sum(is_intervened_after_ui_not_equals_um_list))/len(is_intervened_after_ui_not_equals_um_list)
-                    average_normalized_entropy = float(sum(normalized_entropy_list))/len(normalized_entropy_list)
 
-                    ui_a_vs_um_ui_matrix_for_is_intervened[i, j] = percentage_intervened
-                    ui_a_vs_um_ui_matrix_for_is_u_intended_equals_um[i, j] = percentage_is_u_intended_equals_um
-                    ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold[i, j] = percentage_is_normalized_entropy_less_than_threshold
-                    ui_a_vs_um_ui_matrix_for_normalized_entropy[i, j] = average_normalized_entropy
-                    ui_a_vs_um_ui_matrix_for_is_intervened_after_ui_not_equals_um[i, j] = percentage_intervened_after_ui_not_equals_um
-
-            with open(ui_a_vs_um_ui_matrix_for_is_intervened_filename, 'wb') as fp:
-                pickle.dump(ui_a_vs_um_ui_matrix_for_is_intervened, fp)
-            with open(ui_a_vs_um_ui_matrix_for_is_u_intended_equals_um_filename, 'wb') as fp:
-                pickle.dump(ui_a_vs_um_ui_matrix_for_is_u_intended_equals_um, fp)
-            with open(ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold_filename, 'wb') as fp:
-                pickle.dump(ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold, fp)
+            with open(ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um_filename, 'wb') as fp:
+                pickle.dump(ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um, fp)
             with open(ui_a_vs_um_ui_matrix_for_normalized_entropy_filename, 'wb') as fp:
                 pickle.dump(ui_a_vs_um_ui_matrix_for_normalized_entropy, fp)
-            with open(ui_a_vs_um_ui_matrix_for_is_intervened_after_ui_not_equals_um_filename, 'wb') as fp:
-                pickle.dump(ui_a_vs_um_ui_matrix_for_is_intervened_after_ui_not_equals_um, fp)
+            with open(ui_a_vs_um_ui_matrix_for_is_intervened_filename, 'wb') as fp:
+                pickle.dump(ui_a_vs_um_ui_matrix_for_is_intervened, fp)
+            with open(ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um_filename, 'wb') as fp:
+                pickle.dump(ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um, fp)
+            with open(ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold_filename, 'wb') as fp:
+                pickle.dump(ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold, fp)
 
-        print('UI_A vs UM_UI for IS_INTERVENED', ui_a_vs_um_ui_matrix_for_is_intervened)
-        print('UI_A vs UM_UI for IS_U_INTENDED_EQUALS_UM', ui_a_vs_um_ui_matrix_for_is_u_intended_equals_um)
-        print('UI_A vs UM_UI for IS_ENTROPY_LESS_THAN_THRESHOLD', ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold)
-        print('UI_A vs UM_UI for NORMALIZED_ENTROPY', ui_a_vs_um_ui_matrix_for_normalized_entropy)
-        print('UI_A vs UM_UI for IS_INTERVENED AFTER UI NOT EQUAL UM', ui_a_vs_um_ui_matrix_for_is_intervened_after_ui_not_equals_um)
-
+            print("ui_a_vs_um_ui_matrix_for_normalized_entropy",ui_a_vs_um_ui_matrix_for_normalized_entropy)
+            print("ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um", ui_a_vs_um_ui_matrix_for_u_intended_not_equals_um)
+            print("ui_a_vs_um_ui_matrix_for_is_intervened", ui_a_vs_um_ui_matrix_for_is_intervened)
+            print("ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um", ui_a_vs_um_ui_matrix_for_is_intervened_after_u_intended_not_equals_um)
+            print("ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold", ui_a_vs_um_ui_matrix_for_is_normalized_entropy_less_than_threshold)
 
     def _compare_mode_switches_between_assistance_conditions(self, force_compute=False):
+        print("COMPARE MODE SWITCHES")
         criteria = collections.OrderedDict()
         for key in self.combination_dict_keys:
             criteria[key] = 'all'
@@ -261,41 +311,44 @@ class SimulationAnalysis(object):
                     for k, sf in enumerate(sim_files_that_satisfies_criteria):
                         with open(sf, 'rb') as fp:
                             simulation_result = pickle.load(fp)
-                        if simulation_result['combination_dict']['ui_given_a_noise'] == ui_a and simulation_result['combination_dict']['um_given_ui_noise'] == um_ui and simulation_result['combination_dict']['entropy_threshold'] == 0.9:
+                        if simulation_result['combination_dict']['ui_given_a_noise'] == ui_a and simulation_result['combination_dict']['um_given_ui_noise'] == um_ui:
                             ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][simulation_result['combination_dict']['assistance_type']].append(simulation_result['data']['total_steps'])
 
             with open(ui_a_vs_um_ui_matrix_for_total_steps_filename, 'wb') as fp:
                 pickle.dump(ui_a_vs_um_ui_matrix_for_total_steps, fp)
 
+        # print(ui_a_vs_um_ui_matrix_for_total_steps)
 
-        for i, ui_a in enumerate(self.UI_GIVEN_A_NOISE):
-            filter_list_means = []
-            corrective_list_means = []
-            no_assistance_list_means = []
-            for j, um_ui in enumerate(self.UM_GIVEN_UI_NOISE):
-                corrective_list_means.append(np.mean(ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][AssistanceType.Corrective]))
-                filter_list_means.append(np.mean(ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][AssistanceType.Filter]))
-                no_assistance_list_means.append(np.mean(ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][AssistanceType.No_Assistance]))
 
-            fig, ax = plt.subplots()
-            N = 4
-            ind = np.arange(N)*3
-            width = 0.8
-            p1 = ax.bar(ind, no_assistance_list_means, bottom=0, color='#7f6d5f')
-            p2 = ax.bar(ind+width, filter_list_means, bottom=0,color='#557f2d')
-            p3 = ax.bar(ind+2*width, corrective_list_means, bottom=0, color='#2d7f5e')
+        # for i, ui_a in enumerate(self.UI_GIVEN_A_NOISE):
+        #     filter_list_means = []
+        #     corrective_list_means = []
+        #     no_assistance_list_means = []
+        #     for j, um_ui in enumerate(self.UM_GIVEN_UI_NOISE):
+        #         corrective_list_means.append(np.mean(ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][AssistanceType.Corrective]))
+        #         filter_list_means.append(np.mean(ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][AssistanceType.Filter]))
+        #         no_assistance_list_means.append(np.mean(ui_a_vs_um_ui_matrix_for_total_steps[ui_a][um_ui][AssistanceType.No_Assistance]))
 
-            ax.set_title('Total Number of Steps for a given UI_GIVEN_A_NOISE {} noise levels'.format(str(ui_a)))
-            ax.set_xticks(ind+1.5*width)
-            ax.set_xticklabels(('0.1', '0.3', '0.5', '0.7'))
-            ax.set_ylabel('Total number of steps')
-            ax.set_xlabel('um_ui_noise')
+        #     fig, ax = plt.subplots()
+        #     N = 4
+        #     ind = np.arange(N)*3
+        #     width = 0.8
+        #     p1 = ax.bar(ind, no_assistance_list_means, bottom=0, color='#7f6d5f')
+        #     p2 = ax.bar(ind+width, filter_list_means, bottom=0,color='#557f2d')
+        #     p3 = ax.bar(ind+2*width, corrective_list_means, bottom=0, color='#2d7f5e')
 
-            # ax.legend((p1[0], p2[0], p3[0]), ('No_Assistance', 'Filter', 'Corrective'))
-            ax.autoscale_view()
+        #     ax.set_title('Total Number of Steps for a given UI_GIVEN_A_NOISE {} noise levels'.format(str(ui_a)))
+        #     ax.set_xticks(ind+1.5*width)
+        #     ax.set_xticklabels(('0.1', '0.3', '0.5', '0.7'))
+        #     ax.set_ylabel('Total number of steps')
+        #     ax.set_xlabel('um_ui_noise')
 
-            plt.show()
+        #     # ax.legend((p1[0], p2[0], p3[0]), ('No_Assistance', 'Filter', 'Corrective'))
+        #     ax.autoscale_view()
 
+        #     plt.show()
+
+        # embed(banner1='check dict')
 
 
 
@@ -327,35 +380,50 @@ class SimulationAnalysis(object):
 
 
         ui_a_vs_um_ui_matrix_filename = os.path.join(results_dir_path, 'ui_a_vs_um_ui_matrix_for_assistance_match_with_ground_truth.pkl')
-        if os.path.exists(ui_a_vs_um_ui_matrix_filename) and not force_compute:
+        assistance_match_with_ground_truth_list_filename = os.path.join(results_dir_path, 'assistance_match_with_ground_truth_list.pkl')
+
+        if os.path.exists(ui_a_vs_um_ui_matrix_filename) and not force_compute: #assumes that if one file exists the other does too
+            with open(assistance_match_with_ground_truth_list_filename, 'rb') as fp:
+                assistance_match_with_ground_truth_list = pickle.load(fp)
+
             with open(ui_a_vs_um_ui_matrix_filename, 'rb') as fp:
                 ui_a_vs_um_ui_matrix = pickle.load(fp)
         else:
-            ui_a_vs_um_ui_matrix = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
-            for i,ui_a in enumerate(self.UI_GIVEN_A_NOISE):
-                for j, um_ui in enumerate(self.UM_GIVEN_UI_NOISE):
-                    print("UI_A and UM_UI", ui_a, um_ui)
-                    assistance_match_with_ground_truth_list = []
-                    for k, sf in enumerate(sim_files_that_satisfies_criteria):
-                        with open(sf, 'rb') as fp:
-                            simulation_result = pickle.load(fp)
-                        if simulation_result['combination_dict']['ui_given_a_noise'] == ui_a and simulation_result['combination_dict']['um_given_ui_noise'] == um_ui:
-                            assistance_match_with_ground_truth_list.extend(simulation_result['data']['assistance_match_with_ground_truth'])
-                        else:
-                            pass
+            
+            assistance_match_with_ground_truth_list = collections.OrderedDict()
+            for ui_a in self.UI_GIVEN_A_NOISE:
+                assistance_match_with_ground_truth_list[ui_a] = collections.defaultdict(list)
 
-                    percentage_of_correct_assistance = float(sum(assistance_match_with_ground_truth_list))/len(assistance_match_with_ground_truth_list)
+            for k, sf in enumerate(sim_files_that_satisfies_criteria):
+                with open(sf, 'rb') as fp:
+                    simulation_result = pickle.load(fp)
+
+                ui_a = simulation_result['combination_dict']['ui_given_a_noise']
+                um_ui = simulation_result['combination_dict']['um_given_ui_noise']
+                assistance_match_with_ground_truth_list[ui_a][um_ui].extend(simulation_result['data']['assistance_match_with_ground_truth'])
+
+
+            with open(assistance_match_with_ground_truth_list_filename, 'wb') as fp:
+                pickle.dump(assistance_match_with_ground_truth_list, fp)
+
+            ui_a_vs_um_ui_matrix = np.zeros((len(self.UI_GIVEN_A_NOISE), len(self.UM_GIVEN_UI_NOISE)))
+
+            for i, ui_a in enumerate(self.UI_GIVEN_A_NOISE):
+                for j, um_ui in enumerate(self.UM_GIVEN_UI_NOISE):
+                    percentage_of_correct_assistance = float(sum(assistance_match_with_ground_truth_list[ui_a][um_ui]))/len(assistance_match_with_ground_truth_list[ui_a][um_ui])
                     ui_a_vs_um_ui_matrix[i, j] = percentage_of_correct_assistance
+
             with open(ui_a_vs_um_ui_matrix_filename, 'wb') as fp:
                 pickle.dump(ui_a_vs_um_ui_matrix, fp)
+            
 
         print('UI_A vs UM_UI for ASSISTANCE MATCH WITH GROUND TRUTH', ui_a_vs_um_ui_matrix)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results_new'), help="The directory where the simulation trials will be stored")
+    parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results_with_entropy'), help="The directory where the simulation trials will be stored")
     args = parser.parse_args()
-    force_compute = [False, False, True]
+    force_compute_list = [True, True, True]
     sa = SimulationAnalysis(args)
-    sa.perform_analysis(force_compute)
+    sa.perform_analysis(force_compute_list)

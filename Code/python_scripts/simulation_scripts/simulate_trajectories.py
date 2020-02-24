@@ -43,7 +43,9 @@ MODES = ['x', 'y', 't']
 #symbols for different locations.
 LOCATIONS = ['p' + str(i) for i in range(NUM_LOCATIONS)]
 #two distinct orientations. Initially robot is at 0, after turning the robot will be at PI/2
-ORIENTATIONS = [0, PI/2]
+ORIENTATIONS = [0, PI/2, -PI/2]
+
+TARGET_ORIENTATION = -PI/2
 #Generate list of states. State = (location, orientation, mode)
 STATES = [s for s in itertools.product(LOCATIONS, ORIENTATIONS, MODES)]
 #low level commands issued by the snp interface. hp = hard puff, hs= hard sip, sp = soft puff, ss = soft sip. Also the domain for ui and um
@@ -65,7 +67,7 @@ MODES_MOTION_ALLOWED = collections.OrderedDict()
 #Depending on the configuration of the initial robot position and goal position, the motion commands will result in either moving towards the
 #next location or the previous location
 TRANSITION_FOR_ACTION =   {'tr': {'sp': {'x': 'next', 'y': 'next', 't': 'next'}, 'ss': {'x': 'prev', 'y': 'prev', 't': 'prev'}},
-					   'tl': {'sp': {'x': 'prev', 'y': 'next', 't': 'next'}, 'ss': {'x': 'next', 'y': 'prev', 't': 'prev'}},
+					   	    'tl': {'sp': {'x': 'prev', 'y': 'next', 't': 'next'}, 'ss': {'x': 'next', 'y': 'prev', 't': 'prev'}},
 					   'br': {'sp': {'x': 'next', 'y': 'prev', 't': 'next'}, 'ss': {'x': 'prev', 'y': 'next', 't': 'prev'}},
 					   'bl': {'sp': {'x': 'prev', 'y': 'prev', 't': 'next'}, 'ss': {'x': 'next', 'y': 'next', 't': 'prev'}}
 						}
@@ -135,13 +137,14 @@ def init_state_transition_model(rgc):
 							elif TRANSITION_FOR_ACTION[rgc][u][m] == 'prev':
 								print LOCATIONS, s
 								new_loc_prev = LOCATIONS[max(LOCATIONS.index(s[0]) - 1, 0 )]
-								STATE_TRANSITION_MODEL[s][u] = (new_loc_prev, s[1], s[2])
+								if m == MODES_MOTION_ALLOWED[new_loc_prev][0]:
+									STATE_TRANSITION_MODEL[s][u] = (new_loc_prev, s[1], s[2])
 						elif m == 't':# if allowed mode is rotation mode, rotate the angle properly.
 							new_theta = s[1]
-							if TRANSITION_FOR_ACTION[rgc][u][m] == 'next' and s[1] == 0:
+							if TRANSITION_FOR_ACTION[rgc][u][m] == 'next':
 								new_theta = min(PI/2, s[1] + PI/2) #max angle allowed is PI/2
-							elif TRANSITION_FOR_ACTION[rgc][u][m] == 'prev' and s[1] == PI/2:
-								new_theta = max(0, s[1] - PI/2) #min angle allowed is 0.0
+							elif TRANSITION_FOR_ACTION[rgc][u][m] == 'prev':
+								new_theta = max(-PI/2, s[1] - PI/2) #min angle allowed is 0.0
 
 							STATE_TRANSITION_MODEL[s][u] = (s[0], new_theta, s[2])
 
@@ -268,7 +271,7 @@ def create_optimal_next_state_dict():
 	'''
 	For every state, this function computes what is the optimal next state to be.
 	'''
-	global STATES, LOCATIONS, LOCATION_OF_TURN, MODES_MOTION_ALLOWED, OPTIMAL_NEXT_STATE_DICT
+	global STATES, LOCATIONS, LOCATION_OF_TURN, MODES_MOTION_ALLOWED, OPTIMAL_NEXT_STATE_DICT, TARGET_ORIENTATION
 	for s in STATES:
 		if LOCATIONS.index(s[0]) < LOCATION_OF_TURN or LOCATIONS.index(s[0]) > LOCATION_OF_TURN: #deal with locations before and after the turn location separately as they consist of ONLY linear motion.
 			if s[2] not in MODES_MOTION_ALLOWED[s[0]]: #if not in the proper mode, switch to the mode
@@ -278,7 +281,7 @@ def create_optimal_next_state_dict():
 				OPTIMAL_NEXT_STATE_DICT[s] = (LOCATIONS[min(LOCATIONS.index(s[0]) + 1, NUM_LOCATIONS)], s[1], s[2])
 		elif LOCATIONS.index(s[0]) == LOCATION_OF_TURN: #at the location of turning, gotta deal with both turning and then moving in the allowed linear mode, IN THAT ORDER
 			if s[2] != 't': #in a linear mode
-				if s[1] == 0: #haven't turned, is not in 't'. Therefore switch to 't'. Because gotta turn first
+				if s[1] != TARGET_ORIENTATION: #haven't turned, is not in 't'. Therefore switch to 't'. Because gotta turn first
 					OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1], 't')
 				else: #have already turned. now need to move to the next location in the allowed linear mode
 					if s[2] == MODES_MOTION_ALLOWED[s[0]][0]: #check if the linear mode is an allowed motion mode. If so, move
@@ -287,8 +290,14 @@ def create_optimal_next_state_dict():
 						OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1], MODES_MOTION_ALLOWED[s[0]][0])
 			else:
 				#already in turning mode
-				if s[1] != PI/2: #if not turned yet, go ahead and turn
-					OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1] + PI/2, s[2])
+				if s[1] != TARGET_ORIENTATION: #if not turned yet, go ahead and turn
+					diff_orientation = TARGET_ORIENTATION - s[1]
+					if diff_orientation > 0:
+						diff_orientation = min(PI/2, diff_orientation)
+					else:
+						diff_orientation = max(-PI/2, diff_orientation)
+
+					OPTIMAL_NEXT_STATE_DICT[s] = (s[0], s[1] + diff_orientation, s[2])
 				else: #if already turned
 					if s[2] == MODES_MOTION_ALLOWED[s[0]][0]: #check if the linear mode is an allowed motion mode. If so, move
 						OPTIMAL_NEXT_STATE_DICT[s] = (LOCATIONS[min(LOCATIONS.index(s[0]) + 1, NUM_LOCATIONS)], s[1], s[2])
@@ -431,7 +440,7 @@ def simulate_snp_interaction(args):
 
 
 	for index, trial in enumerate(os.listdir(simulation_trial_dir)):
-		global NUM_TURNS, NUM_LOCATIONS, UM_GIVEN_UI_NOISE, UI_GIVEN_A_NOISE, ENTROPY_THRESHOLD, LOCATIONS, LOCATION_OF_TURN, STATES,ASSISTANCE_TYPE
+		global NUM_TURNS, NUM_LOCATIONS, UM_GIVEN_UI_NOISE, UI_GIVEN_A_NOISE, ENTROPY_THRESHOLD, TARGET_ORIENTATION, LOCATIONS, LOCATION_OF_TURN, STATES,ASSISTANCE_TYPE
 		global P_UI_GIVEN_UM, P_UM_GIVEN_UI, P_UI_GIVEN_A, STATE_TRANSITION_MODEL, OPTIMAL_ACTION_DICT, OPTIMAL_NEXT_STATE_DICT, MODES_MOTION_ALLOWED
 		P_UI_GIVEN_A = collections.OrderedDict()
 		P_UM_GIVEN_UI =collections.OrderedDict()
@@ -453,6 +462,8 @@ def simulate_snp_interaction(args):
 		UI_GIVEN_A_NOISE = combination_dict['ui_given_a_noise']
 		UM_GIVEN_UI_NOISE = combination_dict['um_given_ui_noise']
 		ENTROPY_THRESHOLD = combination_dict['entropy_threshold']
+		TARGET_ORIENTATION = combination_dict['target_orientation']
+
 		#derived variables
 
 		NUM_LOCATIONS = NUM_TURNS + 2 #total number of 'pitstops' = turns+start+end point
@@ -465,8 +476,10 @@ def simulate_snp_interaction(args):
 		init_modes_in_which_motion_allowed_dict(start_direction)
 		create_state_transition_model()
 		init_state_transition_model(r_to_g_config)
+
 		create_optimal_next_state_dict()
 		generate_optimal_control_dict()
+
 		init_p_ui_given_a()
 		init_p_um_given_ui()
 
@@ -529,7 +542,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--simulation_trial_dir', dest='simulation_trial_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'trial_generation_for_experiment_1', 'simulation_trial_dir'), help="The directory where trials will be stored are")
 	parser.add_argument('--num_reps_per_condition', action='store', type=int, default=10, help="number of repetetions for single combination of conditions ")
-	parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results_new'), help="The directory where the simulation trials will be stored")
+	parser.add_argument('--simulation_results_dir', dest='simulation_results_dir',default=os.path.join(os.path.dirname(os.getcwd()), 'simulation_scripts', 'simulation_results_with_entropy'), help="The directory where the simulation trials will be stored")
 
 	args = parser.parse_args()
 	simulate_snp_interaction(args)
